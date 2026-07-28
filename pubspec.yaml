@@ -1,0 +1,53 @@
+name: pet_camera
+description: 元宝爱拍照 - AI 宠物影像 App（v1 主演示端：Android）
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.0
+  flutter: ">=3.44.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # 状态管理（Spec 锁定 Riverpod 3.x）
+  flutter_riverpod: ^3.2.1
+  # 图标库（Spec 锁定 Lucide，全 App 不混用、禁 emoji）
+  # 使用 lucide_flutter（官方维护，兼容 Dart 3.12+，替代已停更的 lucide_icons）
+  lucide_flutter: ^1.25.0
+  # 相机插件（切片2：真实取景框 + 快门拍照；Web/Android 双端支持）
+  camera: ^0.11.1
+  # HTTP 客户端（切片3：AI 写真云端 API 调用）
+  http: ^1.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/seed/photos/
+    - assets/seed/seed_manifest.json
+  fonts:
+    # 英文/数字：Poppins（几何无衬线，Ins 风格标配）
+    - family: Poppins
+      fonts:
+        - asset: assets/fonts/Poppins-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Poppins-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Poppins-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Poppins-Bold.ttf
+          weight: 700
+    # 中文：思源黑体 Noto Sans SC（干净现代，variable 字体多字重复用同一文件）
+    - family: Noto Sans SC
+      fonts:
+        - asset: assets/fonts/NotoSansSC.ttf
+          weight: 400
+        - asset: assets/fonts/NotoSansSC.ttf
+          weight: 500
+        - asset: assets/fonts/NotoSansSC.ttf
+          weight: 700

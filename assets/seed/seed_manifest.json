@@ -1,0 +1,1429 @@
+{
+  "pets": [
+    {
+      "id": "yuanbao",
+      "name": "金元宝",
+      "species": "cat",
+      "breed": "英国短毛猫",
+      "birthday": "2022-09-16",
+      "avatarFileName": "yuanbao_headshot.png",
+      "bio": "一只爱拍照的英短，也是本项目首席模特与种子数据来源。"
+    },
+    {
+      "id": "xiaomianhua",
+      "name": "小棉花",
+      "species": "cat",
+      "breed": "英短/混血",
+      "birthday": "2022-03-01",
+      "avatarFileName": "xiaomianhua_001.jpg",
+      "bio": "软萌小棉花，爱撒娇。"
+    },
+    {
+      "id": "xiaotangyuan",
+      "name": "小汤圆",
+      "species": "cat",
+      "breed": "英短/混血",
+      "birthday": "2024-02-01",
+      "avatarFileName": "xiaotangyuan_001.jpg",
+      "bio": "圆润小汤圆，呆萌可爱。"
+    },
+    {
+      "id": "friends",
+      "name": "元宝的朋友们",
+      "species": "cat",
+      "breed": "猫友圈",
+      "birthday": "",
+      "avatarFileName": "friend_001.jpg",
+      "bio": "金元宝的猫友圈"
+    }
+  ],
+  "albums": [
+    {
+      "id": "a_daily",
+      "petId": "yuanbao",
+      "title": "日常抓拍"
+    },
+    {
+      "id": "a_portrait",
+      "petId": "yuanbao",
+      "title": "写真时刻"
+    },
+    {
+      "id": "a_mh_daily",
+      "petId": "xiaomianhua",
+      "title": "小棉花的日常"
+    },
+    {
+      "id": "a_ty_daily",
+      "petId": "xiaotangyuan",
+      "title": "小汤圆的日常"
+    },
+    {
+      "id": "a_friends",
+      "petId": "friends",
+      "title": "元宝的朋友们"
+    }
+  ],
+  "photos": [
+    {
+      "id": "mh001",
+      "petId": "xiaomianhua",
+      "albumId": "a_mh_daily",
+      "fileName": "xiaomianhua_001.jpg",
+      "capturedAt": "2025-05-01T10:00:00",
+      "source": "seed"
+    },
+    {
+      "id": "mh002",
+      "petId": "xiaomianhua",
+      "albumId": "a_mh_daily",
+      "fileName": "xiaomianhua_002.jpg",
+      "capturedAt": "2025-05-15T11:00:00",
+      "source": "seed"
+    },
+    {
+      "id": "mh003",
+      "petId": "xiaomianhua",
+      "albumId": "a_mh_daily",
+      "fileName": "xiaomianhua_003.jpg",
+      "capturedAt": "2025-06-01T09:30:00",
+      "source": "seed"
+    },
+    {
+      "id": "mh004",
+      "petId": "xiaomianhua",
+      "albumId": "a_mh_daily",
+      "fileName": "xiaomianhua_004.jpg",
+      "capturedAt": "2025-06-20T14:00:00",
+      "source": "seed"
+    },
+    {
+      "id": "mh005",
+      "petId": "xiaomianhua",
+      "albumId": "a_mh_daily",
+      "fileName": "xiaomianhua_005.jpg",
+      "capturedAt": "2025-07-01T16:00:00",
+      "source": "seed"
+    },
+    {
+      "id": "mh006",
+      "petId": "xiaomianhua",
+      "albumId": "a_mh_daily",
+      "fileName": "xiaomianhua_006.jpg",
+      "capturedAt": "2025-07-15T10:30:00",
+      "source": "seed"
+    },
+    {
+      "id": "mh007",
+      "petId": "xiaomianhua",
+      "albumId": "a_mh_daily",
+      "fileName": "xiaomianhua_007.jpg",
+      "capturedAt": "2025-08-01T13:00:00",
+      "source": "seed"
+    },
+    {
+      "id": "mh008",
+      "petId": "xiaomianhua",
+      "albumId": "a_mh_daily",
+      "fileName": "xiaomianhua_008.jpg",
+      "capturedAt": "2025-08-20T15:00:00",
+      "source": "seed"
+    },
+    {
+      "id": "mh009",
+      "petId": "xiaomianhua",
+      "albumId": "a_mh_daily",
+      "fileName": "xiaomianhua_009.jpg",
+      "capturedAt": "2025-09-01T11:00:00",
+      "source": "seed"
+    },
+    {
+      "id": "mh010",
+      "petId": "xiaomianhua",
+      "albumId": "a_mh_daily",
+      "fileName": "xiaomianhua_010.jpg",
+      "capturedAt": "2025-09-15T14:30:00",
+      "source": "seed"
+    },
+    {
+      "id": "mh011",
+      "petId": "xiaomianhua",
+      "albumId": "a_mh_daily",
+      "fileName": "xiaomianhua_011.jpg",
+      "capturedAt": "2025-10-01T10:00:00",
+      "source": "seed"
+    },
+    {
+      "id": "mh012",
+      "petId": "xiaomianhua",
+      "albumId": "a_mh_daily",
+      "fileName": "xiaomianhua_012.jpg",
+      "capturedAt": "2025-10-20T16:00:00",
+      "source": "seed"
+    },
+    {
+      "id": "ty001",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_001.jpg",
+      "capturedAt": "2025-03-01T09:00:00",
+      "source": "seed"
+    },
+    {
+      "id": "ty002",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_002.jpg",
+      "capturedAt": "2025-03-20T11:00:00",
+      "source": "seed"
+    },
+    {
+      "id": "ty003",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_003.jpg",
+      "capturedAt": "2025-04-01T14:00:00",
+      "source": "seed"
+    },
+    {
+      "id": "ty004",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_004.jpg",
+      "capturedAt": "2025-04-15T10:30:00",
+      "source": "seed"
+    },
+    {
+      "id": "ty005",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_005.jpg",
+      "capturedAt": "2025-05-01T15:00:00",
+      "source": "seed"
+    },
+    {
+      "id": "ty006",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_006.jpg",
+      "capturedAt": "2025-05-20T09:30:00",
+      "source": "seed"
+    },
+    {
+      "id": "ty007",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_007.jpg",
+      "capturedAt": "2025-06-01T13:00:00",
+      "source": "seed"
+    },
+    {
+      "id": "ty008",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_008.jpg",
+      "capturedAt": "2025-06-20T16:00:00",
+      "source": "seed"
+    },
+    {
+      "id": "ty009",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_009.jpg",
+      "capturedAt": "2025-07-01T11:00:00",
+      "source": "seed"
+    },
+    {
+      "id": "ty010",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_010.jpg",
+      "capturedAt": "2025-07-15T14:30:00",
+      "source": "seed"
+    },
+    {
+      "id": "ty011",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_011.jpg",
+      "capturedAt": "2025-08-01T10:00:00",
+      "source": "seed"
+    },
+    {
+      "id": "ty012",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_012.jpg",
+      "capturedAt": "2025-08-20T15:00:00",
+      "source": "seed"
+    },
+    {
+      "id": "yb025",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_025.png",
+      "capturedAt": "2026-07-09T10:23:14",
+      "source": "seed"
+    },
+    {
+      "id": "yb026",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_026.jpg",
+      "capturedAt": "2026-06-25T16:13:12",
+      "source": "seed"
+    },
+    {
+      "id": "yb027",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_027.jpg",
+      "capturedAt": "2026-07-22T16:32:56",
+      "source": "seed"
+    },
+    {
+      "id": "yb028",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_028.jpg",
+      "capturedAt": "2026-07-22T16:33:02",
+      "source": "seed"
+    },
+    {
+      "id": "yb029",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_029.jpg",
+      "capturedAt": "2026-07-22T16:32:24",
+      "source": "seed"
+    },
+    {
+      "id": "yb030",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_030.jpg",
+      "capturedAt": "2026-07-22T16:31:50",
+      "source": "seed"
+    },
+    {
+      "id": "yb031",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_031.jpg",
+      "capturedAt": "2026-07-22T16:31:52",
+      "source": "seed"
+    },
+    {
+      "id": "yb032",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_032.jpg",
+      "capturedAt": "2026-07-22T16:33:08",
+      "source": "seed"
+    },
+    {
+      "id": "yb033",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_033.jpg",
+      "capturedAt": "2026-07-22T16:33:06",
+      "source": "seed"
+    },
+    {
+      "id": "yb034",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_034.jpg",
+      "capturedAt": "2026-07-22T16:33:04",
+      "source": "seed"
+    },
+    {
+      "id": "yb035",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_035.jpg",
+      "capturedAt": "2026-07-22T16:33:02",
+      "source": "seed"
+    },
+    {
+      "id": "yb036",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_036.jpg",
+      "capturedAt": "2026-07-22T16:33:00",
+      "source": "seed"
+    },
+    {
+      "id": "yb037",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_037.jpg",
+      "capturedAt": "2026-07-22T16:33:00",
+      "source": "seed"
+    },
+    {
+      "id": "yb038",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_038.jpg",
+      "capturedAt": "2026-07-22T16:32:54",
+      "source": "seed"
+    },
+    {
+      "id": "yb039",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_039.jpg",
+      "capturedAt": "2026-07-22T16:32:52",
+      "source": "seed"
+    },
+    {
+      "id": "yb040",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_040.jpg",
+      "capturedAt": "2026-07-22T16:32:46",
+      "source": "seed"
+    },
+    {
+      "id": "yb041",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_041.jpg",
+      "capturedAt": "2026-07-22T16:32:48",
+      "source": "seed"
+    },
+    {
+      "id": "yb042",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_042.jpg",
+      "capturedAt": "2026-07-22T16:28:56",
+      "source": "seed"
+    },
+    {
+      "id": "yb043",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_043.jpg",
+      "capturedAt": "2026-07-22T16:32:42",
+      "source": "seed"
+    },
+    {
+      "id": "yb044",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_044.jpg",
+      "capturedAt": "2026-07-22T16:32:32",
+      "source": "seed"
+    },
+    {
+      "id": "yb045",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_045.jpg",
+      "capturedAt": "2026-07-22T16:32:34",
+      "source": "seed"
+    },
+    {
+      "id": "yb046",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_046.jpg",
+      "capturedAt": "2026-07-22T16:32:40",
+      "source": "seed"
+    },
+    {
+      "id": "yb047",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_047.jpg",
+      "capturedAt": "2026-07-22T16:32:32",
+      "source": "seed"
+    },
+    {
+      "id": "yb048",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_048.jpg",
+      "capturedAt": "2026-07-22T16:32:40",
+      "source": "seed"
+    },
+    {
+      "id": "yb049",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_049.jpg",
+      "capturedAt": "2026-07-22T16:32:30",
+      "source": "seed"
+    },
+    {
+      "id": "yb050",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_050.jpg",
+      "capturedAt": "2026-07-22T16:28:52",
+      "source": "seed"
+    },
+    {
+      "id": "yb051",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_051.jpg",
+      "capturedAt": "2026-07-22T16:32:38",
+      "source": "seed"
+    },
+    {
+      "id": "yb052",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_052.jpg",
+      "capturedAt": "2026-07-22T16:32:36",
+      "source": "seed"
+    },
+    {
+      "id": "yb053",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_053.jpg",
+      "capturedAt": "2026-07-22T16:32:28",
+      "source": "seed"
+    },
+    {
+      "id": "yb054",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_054.jpg",
+      "capturedAt": "2026-07-22T16:32:26",
+      "source": "seed"
+    },
+    {
+      "id": "yb055",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_055.jpg",
+      "capturedAt": "2026-07-22T16:32:22",
+      "source": "seed"
+    },
+    {
+      "id": "yb056",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_056.jpg",
+      "capturedAt": "2026-07-22T16:32:24",
+      "source": "seed"
+    },
+    {
+      "id": "yb057",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_057.jpg",
+      "capturedAt": "2026-07-22T16:32:20",
+      "source": "seed"
+    },
+    {
+      "id": "yb058",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_058.jpg",
+      "capturedAt": "2026-07-22T16:32:14",
+      "source": "seed"
+    },
+    {
+      "id": "yb059",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_059.jpg",
+      "capturedAt": "2026-07-22T16:32:10",
+      "source": "seed"
+    },
+    {
+      "id": "yb060",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_060.jpg",
+      "capturedAt": "2026-07-22T16:32:06",
+      "source": "seed"
+    },
+    {
+      "id": "yb061",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_061.jpg",
+      "capturedAt": "2026-07-22T16:32:02",
+      "source": "seed"
+    },
+    {
+      "id": "yb062",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_062.jpg",
+      "capturedAt": "2026-07-22T16:32:00",
+      "source": "seed"
+    },
+    {
+      "id": "yb063",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_063.jpg",
+      "capturedAt": "2026-07-22T16:32:06",
+      "source": "seed"
+    },
+    {
+      "id": "yb064",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_064.jpg",
+      "capturedAt": "2026-07-22T16:31:58",
+      "source": "seed"
+    },
+    {
+      "id": "yb065",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_065.jpg",
+      "capturedAt": "2026-07-22T16:31:56",
+      "source": "seed"
+    },
+    {
+      "id": "yb066",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_066.jpg",
+      "capturedAt": "2026-07-22T16:31:46",
+      "source": "seed"
+    },
+    {
+      "id": "yb067",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_067.jpg",
+      "capturedAt": "2026-07-22T16:30:54",
+      "source": "seed"
+    },
+    {
+      "id": "yb068",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_068.jpg",
+      "capturedAt": "2026-07-22T16:30:52",
+      "source": "seed"
+    },
+    {
+      "id": "yb069",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_069.jpg",
+      "capturedAt": "2026-07-22T16:31:50",
+      "source": "seed"
+    },
+    {
+      "id": "yb070",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_070.jpg",
+      "capturedAt": "2026-07-22T16:31:46",
+      "source": "seed"
+    },
+    {
+      "id": "yb071",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_071.jpg",
+      "capturedAt": "2026-07-22T16:30:42",
+      "source": "seed"
+    },
+    {
+      "id": "yb072",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_072.jpg",
+      "capturedAt": "2026-07-22T16:31:42",
+      "source": "seed"
+    },
+    {
+      "id": "yb073",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_073.jpg",
+      "capturedAt": "2026-07-22T16:30:42",
+      "source": "seed"
+    },
+    {
+      "id": "yb074",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_074.jpg",
+      "capturedAt": "2026-07-22T16:31:36",
+      "source": "seed"
+    },
+    {
+      "id": "yb075",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_075.jpg",
+      "capturedAt": "2026-07-22T16:30:36",
+      "source": "seed"
+    },
+    {
+      "id": "yb076",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_076.jpg",
+      "capturedAt": "2026-07-22T16:31:30",
+      "source": "seed"
+    },
+    {
+      "id": "yb077",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_077.jpg",
+      "capturedAt": "2026-07-22T16:30:34",
+      "source": "seed"
+    },
+    {
+      "id": "yb078",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_078.jpg",
+      "capturedAt": "2026-07-22T16:30:30",
+      "source": "seed"
+    },
+    {
+      "id": "yb079",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_079.jpg",
+      "capturedAt": "2026-07-22T16:30:28",
+      "source": "seed"
+    },
+    {
+      "id": "yb080",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_080.jpg",
+      "capturedAt": "2026-07-22T16:31:22",
+      "source": "seed"
+    },
+    {
+      "id": "yb081",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_081.jpg",
+      "capturedAt": "2026-07-22T16:31:18",
+      "source": "seed"
+    },
+    {
+      "id": "yb082",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_082.jpg",
+      "capturedAt": "2026-07-22T16:30:26",
+      "source": "seed"
+    },
+    {
+      "id": "yb083",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_083.jpg",
+      "capturedAt": "2026-06-25T16:15:02",
+      "source": "seed"
+    },
+    {
+      "id": "yb084",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_084.jpg",
+      "capturedAt": "2026-07-22T16:30:02",
+      "source": "seed"
+    },
+    {
+      "id": "yb085",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_085.jpg",
+      "capturedAt": "2026-07-22T16:29:26",
+      "source": "seed"
+    },
+    {
+      "id": "yb086",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_086.jpg",
+      "capturedAt": "2026-07-22T16:29:24",
+      "source": "seed"
+    },
+    {
+      "id": "yb087",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_087.jpg",
+      "capturedAt": "2026-07-22T16:30:24",
+      "source": "seed"
+    },
+    {
+      "id": "yb088",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_088.jpg",
+      "capturedAt": "2026-07-22T16:30:20",
+      "source": "seed"
+    },
+    {
+      "id": "yb089",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_089.jpg",
+      "capturedAt": "2026-07-22T16:30:10",
+      "source": "seed"
+    },
+    {
+      "id": "yb090",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_090.jpg",
+      "capturedAt": "2026-07-22T16:30:14",
+      "source": "seed"
+    },
+    {
+      "id": "yb091",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_091.jpg",
+      "capturedAt": "2026-07-22T16:30:20",
+      "source": "seed"
+    },
+    {
+      "id": "yb092",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_092.jpg",
+      "capturedAt": "2026-07-22T16:30:18",
+      "source": "seed"
+    },
+    {
+      "id": "yb093",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_093.jpg",
+      "capturedAt": "2026-07-22T16:30:16",
+      "source": "seed"
+    },
+    {
+      "id": "yb094",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_094.jpg",
+      "capturedAt": "2026-07-22T16:30:16",
+      "source": "seed"
+    },
+    {
+      "id": "yb095",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_095.jpg",
+      "capturedAt": "2026-07-22T16:30:10",
+      "source": "seed"
+    },
+    {
+      "id": "yb096",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_096.jpg",
+      "capturedAt": "2026-07-22T16:30:08",
+      "source": "seed"
+    },
+    {
+      "id": "yb097",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_097.jpg",
+      "capturedAt": "2026-07-22T16:28:54",
+      "source": "seed"
+    },
+    {
+      "id": "yb098",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_098.jpg",
+      "capturedAt": "2026-07-22T16:30:08",
+      "source": "seed"
+    },
+    {
+      "id": "yb099",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_099.jpg",
+      "capturedAt": "2026-07-22T16:30:02",
+      "source": "seed"
+    },
+    {
+      "id": "yb100",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_100.jpg",
+      "capturedAt": "2026-07-22T16:30:00",
+      "source": "seed"
+    },
+    {
+      "id": "yb101",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_101.jpg",
+      "capturedAt": "2026-07-22T16:29:54",
+      "source": "seed"
+    },
+    {
+      "id": "yb102",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_102.jpg",
+      "capturedAt": "2026-07-22T16:29:56",
+      "source": "seed"
+    },
+    {
+      "id": "yb103",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_103.jpg",
+      "capturedAt": "2026-07-22T16:28:56",
+      "source": "seed"
+    },
+    {
+      "id": "yb104",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_104.jpg",
+      "capturedAt": "2026-07-22T16:29:48",
+      "source": "seed"
+    },
+    {
+      "id": "yb105",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_105.jpg",
+      "capturedAt": "2026-07-22T16:29:50",
+      "source": "seed"
+    },
+    {
+      "id": "yb106",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_106.jpg",
+      "capturedAt": "2026-07-22T16:29:44",
+      "source": "seed"
+    },
+    {
+      "id": "yb107",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_107.jpg",
+      "capturedAt": "2026-07-22T16:28:52",
+      "source": "seed"
+    },
+    {
+      "id": "yb108",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_108.jpg",
+      "capturedAt": "2026-07-22T16:29:48",
+      "source": "seed"
+    },
+    {
+      "id": "yb109",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_109.jpg",
+      "capturedAt": "2026-07-22T16:29:42",
+      "source": "seed"
+    },
+    {
+      "id": "yb110",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_110.jpg",
+      "capturedAt": "2026-07-22T16:29:42",
+      "source": "seed"
+    },
+    {
+      "id": "yb111",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_111.jpg",
+      "capturedAt": "2026-07-22T16:29:42",
+      "source": "seed"
+    },
+    {
+      "id": "yb112",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_112.jpg",
+      "capturedAt": "2026-07-22T16:29:38",
+      "source": "seed"
+    },
+    {
+      "id": "yb113",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_113.jpg",
+      "capturedAt": "2026-07-22T16:29:38",
+      "source": "seed"
+    },
+    {
+      "id": "yb114",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_114.jpg",
+      "capturedAt": "2026-07-22T16:29:36",
+      "source": "seed"
+    },
+    {
+      "id": "yb115",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_115.jpg",
+      "capturedAt": "2026-07-22T16:29:34",
+      "source": "seed"
+    },
+    {
+      "id": "yb116",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_116.jpg",
+      "capturedAt": "2026-07-22T16:29:30",
+      "source": "seed"
+    },
+    {
+      "id": "yb117",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_117.jpg",
+      "capturedAt": "2026-07-22T16:29:30",
+      "source": "seed"
+    },
+    {
+      "id": "yb118",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_118.jpg",
+      "capturedAt": "2026-07-22T16:29:10",
+      "source": "seed"
+    },
+    {
+      "id": "yb119",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_119.jpg",
+      "capturedAt": "2026-07-22T16:29:10",
+      "source": "seed"
+    },
+    {
+      "id": "yb120",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_120.jpg",
+      "capturedAt": "2026-07-22T16:28:58",
+      "source": "seed"
+    },
+    {
+      "id": "yb121",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_121.jpg",
+      "capturedAt": "2026-07-22T16:28:58",
+      "source": "seed"
+    },
+    {
+      "id": "yb122",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_122.jpg",
+      "capturedAt": "2026-07-22T16:29:02",
+      "source": "seed"
+    },
+    {
+      "id": "fr001",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_001.jpg",
+      "capturedAt": "2025-12-18T16:48:08",
+      "source": "seed"
+    },
+    {
+      "id": "fr002",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_002.jpg",
+      "capturedAt": "2025-12-18T16:44:10",
+      "source": "seed"
+    },
+    {
+      "id": "fr003",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_003.jpg",
+      "capturedAt": "2025-12-18T16:45:38",
+      "source": "seed"
+    },
+    {
+      "id": "fr004",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_004.jpg",
+      "capturedAt": "2025-12-18T16:47:38",
+      "source": "seed"
+    },
+    {
+      "id": "fr005",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_005.jpg",
+      "capturedAt": "2025-12-18T16:48:44",
+      "source": "seed"
+    },
+    {
+      "id": "fr006",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_006.jpg",
+      "capturedAt": "2025-12-18T16:47:18",
+      "source": "seed"
+    },
+    {
+      "id": "fr007",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_007.jpg",
+      "capturedAt": "2025-12-18T16:45:10",
+      "source": "seed"
+    },
+    {
+      "id": "fr008",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_008.jpg",
+      "capturedAt": "2025-12-18T16:48:12",
+      "source": "seed"
+    },
+    {
+      "id": "fr009",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_009.jpg",
+      "capturedAt": "2025-12-18T16:46:08",
+      "source": "seed"
+    },
+    {
+      "id": "fr010",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_010.jpg",
+      "capturedAt": "2025-12-18T16:46:50",
+      "source": "seed"
+    },
+    {
+      "id": "fr011",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_011.jpg",
+      "capturedAt": "2025-12-18T16:47:08",
+      "source": "seed"
+    },
+    {
+      "id": "fr012",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_012.jpg",
+      "capturedAt": "2025-12-18T16:48:26",
+      "source": "seed"
+    },
+    {
+      "id": "fr013",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_013.jpg",
+      "capturedAt": "2025-12-18T16:45:48",
+      "source": "seed"
+    },
+    {
+      "id": "fr014",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_014.jpg",
+      "capturedAt": "2025-12-18T16:46:10",
+      "source": "seed"
+    },
+    {
+      "id": "fr015",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_015.jpg",
+      "capturedAt": "2025-12-18T16:46:00",
+      "source": "seed"
+    },
+    {
+      "id": "fr016",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_016.jpg",
+      "capturedAt": "2025-12-18T16:47:00",
+      "source": "seed"
+    },
+    {
+      "id": "fr017",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_017.jpg",
+      "capturedAt": "2025-12-18T16:44:10",
+      "source": "seed"
+    },
+    {
+      "id": "fr018",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_018.jpg",
+      "capturedAt": "2025-12-18T16:46:00",
+      "source": "seed"
+    },
+    {
+      "id": "fr019",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_019.jpg",
+      "capturedAt": "2025-12-18T16:47:20",
+      "source": "seed"
+    },
+    {
+      "id": "fr020",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_020.jpg",
+      "capturedAt": "2025-12-18T16:48:34",
+      "source": "seed"
+    },
+    {
+      "id": "fr021",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_021.jpg",
+      "capturedAt": "2025-12-18T16:46:58",
+      "source": "seed"
+    },
+    {
+      "id": "fr022",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_022.jpg",
+      "capturedAt": "2025-12-18T16:48:32",
+      "source": "seed"
+    },
+    {
+      "id": "fr023",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_023.jpg",
+      "capturedAt": "2025-12-18T16:44:18",
+      "source": "seed"
+    },
+    {
+      "id": "fr024",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_024.jpg",
+      "capturedAt": "2025-12-18T16:47:26",
+      "source": "seed"
+    },
+    {
+      "id": "fr025",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_025.jpg",
+      "capturedAt": "2025-12-18T16:48:44",
+      "source": "seed"
+    },
+    {
+      "id": "fr026",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_026.jpg",
+      "capturedAt": "2025-12-18T16:45:38",
+      "source": "seed"
+    },
+    {
+      "id": "fr027",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_027.jpg",
+      "capturedAt": "2025-12-18T16:47:52",
+      "source": "seed"
+    },
+    {
+      "id": "fr028",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_028.jpg",
+      "capturedAt": "2025-12-18T16:48:40",
+      "source": "seed"
+    },
+    {
+      "id": "fr029",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_029.jpg",
+      "capturedAt": "2025-12-18T16:46:54",
+      "source": "seed"
+    },
+    {
+      "id": "fr030",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_030.jpg",
+      "capturedAt": "2025-12-18T16:48:22",
+      "source": "seed"
+    },
+    {
+      "id": "fr031",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_031.jpg",
+      "capturedAt": "2025-12-18T16:47:04",
+      "source": "seed"
+    },
+    {
+      "id": "fr032",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_032.jpg",
+      "capturedAt": "2025-12-18T16:48:38",
+      "source": "seed"
+    },
+    {
+      "id": "fr033",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_033.jpg",
+      "capturedAt": "2026-07-22T16:29:06",
+      "source": "seed"
+    },
+    {
+      "id": "fr034",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_034.jpg",
+      "capturedAt": "2026-07-22T16:29:00",
+      "source": "seed"
+    },
+    {
+      "id": "fr035",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_035.jpg",
+      "capturedAt": "2026-07-22T16:29:06",
+      "source": "seed"
+    },
+    {
+      "id": "fr036",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_036.jpg",
+      "capturedAt": "2025-12-18T16:47:22",
+      "source": "seed"
+    },
+    {
+      "id": "fr037",
+      "petId": "friends",
+      "albumId": "a_friends",
+      "fileName": "friend_037.jpg",
+      "capturedAt": "2025-12-18T16:48:28",
+      "source": "seed"
+    },
+    {
+      "id": "mh013",
+      "petId": "xiaomianhua",
+      "albumId": "a_mh_daily",
+      "fileName": "xiaomianhua_013.jpg",
+      "capturedAt": "2026-07-22T16:30:48",
+      "source": "seed"
+    },
+    {
+      "id": "mh014",
+      "petId": "xiaomianhua",
+      "albumId": "a_mh_daily",
+      "fileName": "xiaomianhua_014.jpg",
+      "capturedAt": "2026-07-24T11:25:42",
+      "source": "seed"
+    },
+    {
+      "id": "mh015",
+      "petId": "xiaomianhua",
+      "albumId": "a_mh_daily",
+      "fileName": "xiaomianhua_015.jpg",
+      "capturedAt": "2026-07-24T11:25:42",
+      "source": "seed"
+    },
+    {
+      "id": "mh016",
+      "petId": "xiaomianhua",
+      "albumId": "a_mh_daily",
+      "fileName": "xiaomianhua_016.jpg",
+      "capturedAt": "2026-07-24T11:25:42",
+      "source": "seed"
+    },
+    {
+      "id": "mh017",
+      "petId": "xiaomianhua",
+      "albumId": "a_mh_daily",
+      "fileName": "xiaomianhua_017.jpg",
+      "capturedAt": "2026-07-24T11:25:42",
+      "source": "seed"
+    },
+    {
+      "id": "ty013",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_013.jpg",
+      "capturedAt": "2026-07-22T16:30:48",
+      "source": "seed"
+    },
+    {
+      "id": "ty014",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_014.jpg",
+      "capturedAt": "2026-07-22T16:30:48",
+      "source": "seed"
+    },
+    {
+      "id": "ty015",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_015.jpg",
+      "capturedAt": "2026-07-24T11:24:40",
+      "source": "seed"
+    },
+    {
+      "id": "ty016",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_016.jpg",
+      "capturedAt": "2026-07-22T16:30:44",
+      "source": "seed"
+    },
+    {
+      "id": "ty017",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_017.jpg",
+      "capturedAt": "2026-07-24T11:23:32",
+      "source": "seed"
+    },
+    {
+      "id": "ty018",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_018.jpg",
+      "capturedAt": "2026-07-24T11:23:32",
+      "source": "seed"
+    }
+  ]
+}
