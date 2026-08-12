@@ -1,4 +1,5 @@
 import 'package:camera/camera.dart';
+import 'package:video_player/video_player.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -7,8 +8,11 @@ import 'package:lucide_flutter/lucide_flutter.dart';
 import 'package:pet_camera/app/tokens.dart';
 import 'package:pet_camera/data/ai_portrait_service.dart';
 import 'package:pet_camera/data/captured_photos.dart';
+import 'package:pet_camera/data/short_videos.dart';
+import 'package:pet_camera/data/app_settings.dart';
 import 'package:pet_camera/data/models.dart';
 import 'package:pet_camera/data/seed_repository.dart';
+import 'package:pet_camera/data/growth_records.dart';
 
 /// 统一页面外壳：顶栏用 Lucide 图标（禁 emoji），配色全部走 Token。
 class _Shell extends StatelessWidget {
@@ -83,21 +87,21 @@ class _OnboardingPageState extends State<OnboardingPage> {
                 children: [
                   // ===== 顶部栏：Facebook 风格（图标 + 粗体标题 + 操作按钮） =====
                   _buildTopBar(),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 8),
 
                   // ===== Snapshot 横滑区（彩色底卡片 + 宠物照 + 名字标签） =====
                   _buildSnapshotSection(),
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 18),
 
                   // ===== Hero 横幅卡（薰衣草紫底 + CTA） =====
                   _HeroBannerCard(),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 12),
 
                   // ===== 功能卡片网格（2列 + 足够高度显示完整文字） =====
-                  _SectionHeader(icon: LucideIcons.sparkles, title: '探索全部功能', colorBlue: false),
-                  const SizedBox(height: 14),
+                  _SectionHeader(icon: LucideIcons.sparkles, title: '更多惊喜', colorBlue: false),
+                  const SizedBox(height: 10),
                   _FeatureGridSection(),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
 
                   // ===== 最近照片横滑 =====
                   _SectionHeader(icon: LucideIcons.images, title: '毛孩近照', colorBlue: true),
@@ -180,7 +184,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
       children: [
         // 横滑彩色卡片（每张不同马卡龙底色）
         SizedBox(
-          height: 180,
+          height: 140,
           child: ScrollConfiguration(
             behavior: _DragScrollBehavior(),
             child: ListView.separated(
@@ -209,10 +213,10 @@ class _SnapshotCard extends StatelessWidget {
   // 每张卡片不同马卡龙底色 + 对应宠物照片 + 图片对齐偏移（猫脸聚焦）
   // ★ 只保留4只核心毛孩，删掉"全家福""最新照片"（主次分明）
   static const _cardColors = [
-    (bg: Color(0xFFF5E6FA), name: '金元宝',   photo: 'yuanbao_headshot.png', align: Alignment(0.0, -0.2)),  // 头像居中偏上
-    (bg: Color(0xFFD6EEF5), name: '小棉花',   photo: 'xiaomianhua_005.jpg', align: Alignment(0.0, -0.45)), // ★ 猫脸放大：强力上移聚焦脸部
-    (bg: Color(0xFFFFE4DD), name: '小汤圆',   photo: 'xiaotangyuan_008.jpg', align: Alignment(0.0, -0.65)), // ★ 猫脸在照片上25%，需负值下移
-    (bg: Color(0xFFE8F0E0), name: '猫友圈',   photo: 'friend_007.jpg', align: Alignment(0.0, -0.2)),      // 默认偏上
+    (bg: Color(0xFFF5E6FA), name: '金元宝',   petId: 'yuanbao',     photo: 'yuanbao_headshot.png', align: Alignment(0.0, -0.2)),  // 头像居中偏上
+    (bg: Color(0xFFD6EEF5), name: '小棉花',   petId: 'xiaomianhua', photo: 'xiaomianhua_005.jpg', align: Alignment(0.0, -0.45)), // ★ 猫脸放大：强力上移聚焦脸部
+    (bg: Color(0xFFFFE4DD), name: '小汤圆',   petId: 'xiaotangyuan', photo: 'xiaotangyuan_008.jpg', align: Alignment(0.0, -0.65)), // ★ 猫脸在照片上25%，需负值下移
+    (bg: Color(0xFFE8F0E0), name: '猫友圈',   petId: 'friends',     photo: 'friend_007.jpg', align: Alignment(0.0, -0.2)),      // 跳转元宝的朋友们
   ];
 
   @override
@@ -220,7 +224,13 @@ class _SnapshotCard extends StatelessWidget {
     final colors = _cardColors[index % _cardColors.length];
 
     return GestureDetector(
-      onTap: () => Navigator.pushNamed(context, '/album'),
+      onTap: () {
+        if (colors.petId.isNotEmpty) {
+          Navigator.pushNamed(context, '/album', arguments: {'petId': colors.petId});
+        } else {
+          Navigator.pushNamed(context, '/album');
+        }
+      },
       child: Container(
         width: 140,
         decoration: BoxDecoration(
@@ -342,12 +352,12 @@ class _HeroBannerCard extends StatelessWidget {
           onTap: () => Navigator.pushNamed(context, '/camera'),
           borderRadius: BorderRadius.circular(20),
           child: Container(
-            height: 160,
+            height: 100,
             decoration: BoxDecoration(
               gradient: _heroGradient,
               borderRadius: BorderRadius.circular(20),
             ),
-            padding: const EdgeInsets.fromLTRB(22, 20, 16, 20),
+            padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
             child: Row(
               children: [
                 // 左侧文字 + 按钮
@@ -358,30 +368,30 @@ class _HeroBannerCard extends StatelessWidget {
                     children: [
                       const Text('为毛孩子记录每一刻',
                           style: TextStyle(
-                            fontSize: 19,
+                            fontSize: 16,
                             fontWeight: FontWeight.w800,
                             color: Color(0xFF2B2622),
-                            height: 1.3,
+                            height: 1.2,
                           )),
-                      const SizedBox(height: 8),
-                      const Text('AI 写真 · 智能相册 · 短片剪辑',
+                      const SizedBox(height: 4),
+                      const Text('毛孩写真 · 毛孩相册 · 一键成片',
                           style: TextStyle(
-                            fontSize: 13,
+                            fontSize: 11.5,
                             color: Color(0xFF8A7FA8), // 薰衣草灰紫
                           )),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 8),
                       // CTA 胶囊按钮（柔紫蓝，参考 Try it 按钮）
                       Container(
-                        height: 38,
-                        padding: const EdgeInsets.symmetric(horizontal: 22),
+                        height: 28,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
                         decoration: BoxDecoration(
                           color: const Color(0xFFA694C8), // 马卡龙柔紫
-                          borderRadius: BorderRadius.circular(19),
+                          borderRadius: BorderRadius.circular(14),
                         ),
                         alignment: Alignment.center,
                         child: const Text('开始拍照',
                             style: TextStyle(
-                              fontSize: 14,
+                              fontSize: 12.5,
                               fontWeight: FontWeight.w700,
                               color: Colors.white,
                               letterSpacing: 0.3,
@@ -390,16 +400,16 @@ class _HeroBannerCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: 8),
 
                 // 右侧宠物照片
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(12),
                   child: Image.asset(
                     'assets/seed/photos/yuanbao_headshot.png',
                     fit: BoxFit.cover,
-                    width: 110,
-                    height: 120,
+                    width: 72,
+                    height: 72,
                   ),
                 ),
               ],
@@ -415,55 +425,58 @@ class _HeroBannerCard extends StatelessWidget {
 const _featureCards = [
   _FeatCardData(
     icon: LucideIcons.wand2,
-    title: 'AI 写真',
-    desc: '一键生成专业级宠物艺术照',
+    title: '毛孩写真',
+    desc: 'AI生成油画、插画等多种艺术风格肖像。',
     tag: 'AI 驱动',
-    assetPath: 'assets/seed/photos/yuanbao_025.png',   // 金元宝透明底大头照 → 写真感
+    assetPath: 'assets/seed/photos/feat_portrait.jpg',   // ★ 金元宝9宫格写真
     route: '/portrait',
+    align: const Alignment(0.0, -0.1),                     // 写真构图居中
   ),
   _FeatCardData(
     icon: LucideIcons.image,
-    title: '智能相册',
-    desc: '按宠物自动分类，瀑布流浏览',
-    tag: '170 张照片',
-    assetPath: 'assets/seed/photos/xiaomianhua_005.jpg', // 小棉花 → 相册多宠物概念
+    title: '毛孩相册',
+    desc: '自动按宠物归类，瀑布流浏览所有照片。',
+    tag: '201 张照片',
+    assetPath: 'assets/seed/photos/feat_album.jpg',      // ★ 春春江江4小奶猫
     route: '/album',
+    align: const Alignment(0.0, -0.3),
   ),
   _FeatCardData(
     icon: LucideIcons.clapperboard,
-    title: '短片剪辑',
-    desc: '照片自动生成萌宠短视频',
-    tag: '即将上线',
-    assetPath: 'assets/seed/photos/xiaotangyuan_008.jpg', // 小汤圆 → 动态短片感
+    title: '一键成片',
+    desc: '选几张照片，AI自动配乐剪辑成短视频。',
+    tag: '视频',
+    assetPath: 'assets/seed/photos/feat_video_thumb.jpg', // ★ 视频缩略图
+    videoAssetPath: 'assets/seed/photos/feat_video_compressed.mp4',  // ★ 压缩版(0.82MB,云端秒加载)
     route: '/short-video',
-    align: const Alignment(0.0, -0.55),   // ★ 猫脸在照片上部，负值聚焦顶部
+    align: const Alignment(0.5, 0.15),                      // ★ 焦点下移（避免顶部杯子/空白过多）
   ),
   _FeatCardData(
     icon: LucideIcons.sparkles,
-    title: '宠物 P 图',
-    desc: '智能抠图、换背景、加贴纸',
-    tag: '即将上线',
-    assetPath: 'assets/seed/photos/friend_010.jpg',     // 猫友 → 趣味P图
+    title: '毛孩美颜',
+    desc: '智能抠图换背景，叠加海量趣味贴纸。',
+    tag: '已上线',
+    assetPath: 'assets/seed/photos/feat_retouch.jpg',     // ★ 布偶猫蓝眼睛(木头)
     route: '/retouch',
-    align: const Alignment(0.0, -0.5),    // ★ 负值：聚焦顶部猫脸
+    align: const Alignment(0.0, -0.25),
   ),
   _FeatCardData(
     icon: LucideIcons.heart,
-    title: '毛孩档案',
-    desc: '记录成长轨迹和健康信息',
+    title: '成长手记',
+    desc: '记录体重、疫苗、趣事与每个成长细节。',
     tag: '4 只宠物',
-    assetPath: 'assets/seed/photos/yuanbao_040.jpg',    // 金元宝日常 → 档案记录感
+    assetPath: 'assets/seed/photos/feat_profile.jpg',     // ★ 兽医体检
     route: '/pet-profile',
-    align: const Alignment(0.0, -0.45),  // ★ 负值：聚焦顶部猫脸
+    align: const Alignment(0.0, -0.2),
   ),
   _FeatCardData(
     icon: LucideIcons.camera,
-    title: '相机',
-    desc: '全屏取景框，一键快门拍照',
+    title: '灵动快门',
+    desc: '全屏取景+防抖算法，精准抓拍灵动瞬间。',
     tag: '已接入',
-    assetPath: 'assets/seed/photos/xiaomianhua_010.jpg', // 小棉花特写 → 拍照感
+    assetPath: 'assets/seed/photos/feat_camera.jpg',      // ★ 戴圈金毛(小凳子)
     route: '/camera',
-    align: const Alignment(0.0, -0.5),    // ★ 负值：聚焦顶部猫脸
+    align: const Alignment(0.0, -0.15),
   ),
 ];
 
@@ -477,6 +490,7 @@ class _FeatCardData {
     required this.assetPath,
     required this.route,
     this.align = const Alignment(0.0, -0.2),  // 默认偏上保猫脸
+    this.videoAssetPath,                     // 视频资源路径（非空时显示播放按钮）
   });
   final IconData icon;
   final String title;
@@ -485,6 +499,7 @@ class _FeatCardData {
   final String assetPath;
   final String route;
   final Alignment align;  // 每张卡片独立的 cover 焦点
+  final String? videoAssetPath;  // 视频资源路径
 }
 
 /// 功能卡片网格区（**纯 3列×2行** + 首卡视觉突出 = 主次分明）
@@ -498,9 +513,9 @@ class _FeatureGridSection extends StatelessWidget {
         physics: const NeverScrollableScrollPhysics(),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 3,                  // ★ 3列
-          mainAxisSpacing: 14,
-          crossAxisSpacing: 12,
-          childAspectRatio: 0.96,            // 加高到近正方，确保文字+标签全显示
+          mainAxisSpacing: 10,
+          crossAxisSpacing: 10,
+          childAspectRatio: 0.80,            // 更高=更矮卡片，节省纵向空间
         ),
         itemCount: _featureCards.length,       // 6张 = 2行
         itemBuilder: (context, i) => _FeatCard(data: _featureCards[i], isFeatured: i == 0),
@@ -510,12 +525,28 @@ class _FeatureGridSection extends StatelessWidget {
 }
 
 /// 单张功能卡片（统一结构 + 首卡 isFeatured 加粗视觉）
+/// 视频卡用 StatefulWidget 驱动 auto-play loop；其余仍为轻量 StatelessWidget。
 class _FeatCard extends StatelessWidget {
   const _FeatCard({required this.data, this.isFeatured = false});
   final _FeatCardData data;
   final bool isFeatured;
 
-  // 马卡龙色（每张卡片不同）
+  @override
+  Widget build(BuildContext context) {
+    // ★ 视频卡片 → 用有状态组件实现自动播放
+    if (data.videoAssetPath != null) {
+      return _AutoPlayVideoCard(data: data, isFeatured: isFeatured);
+    }
+    return _ImageFeatCard(data: data, isFeatured: isFeatured);
+  }
+}
+
+// ─── 纯图片卡片（无视频，保持轻量 StatelessWidget）───────────────
+class _ImageFeatCard extends StatelessWidget {
+  const _ImageFeatCard({required this.data, this.isFeatured = false});
+  final _FeatCardData data;
+  final bool isFeatured;
+
   static const _macaronColors = [
     (bg: Color(0xFFE8E0F6), icon: Color(0xFF9B8AC4)), // 薰衣草 ← 首卡用
     (bg: Color(0xFFD6EEF5), icon: Color(0xFF5BA8C8)), // 薄荷蓝
@@ -537,7 +568,6 @@ class _FeatCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
-            // ★ 主次之分：首卡有紫色渐变边框 + 更强阴影
             border: isFeatured
                 ? Border.all(color: const Color(0xFF9B8AC4).withValues(alpha: 0.45), width: 1.8)
                 : null,
@@ -546,114 +576,34 @@ class _FeatCard extends StatelessWidget {
                     BoxShadow(color: const Color(0xFF9B8AC4).withValues(alpha: 0.18), blurRadius: 16, offset: const Offset(0, 6)),
                     BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 3)),
                   ]
-                : [
-                    BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2)),
-                  ],
+                : [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
           ),
           clipBehavior: Clip.antiAlias,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 图片区
-              Expanded(
-                flex: 55,
-                child: Stack(
-                  children: [
-                    // ★ cover 填满卡片 + 每张独立焦点（默认偏上保猫脸，可逐张调）
-                    Positioned.fill(child: Image.asset(data.assetPath, fit: BoxFit.cover, alignment: data.align)),
-                    // 右上角图标标签
-                    Positioned(
-                      top: 7,
-                      right: 7,
-                      child: Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: colors.bg,
-                          shape: BoxShape.circle,
-                          // 首卡图标稍大+实心
-                          border: isFeatured
-                              ? Border.all(color: colors.icon.withValues(alpha: 0.3), width: 1.5)
-                              : null,
-                        ),
-                        child: Icon(data.icon, size: isFeatured ? 15 : 13, color: colors.icon),
-                      ),
-                    ),
-                    // ★ 首卡独有：左上角"推荐"小标
-                    if (isFeatured)
-                      Positioned(
-                        top: 7,
-                        left: 7,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF9B8AC4).withValues(alpha: 0.90),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Text('推荐',
-                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white)),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-
-              // 文字区
-              Expanded(
-                flex: 45,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(9, 7, 9, 6),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // ★ 标题 + 标签同一行（不再被截断）
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(data.title,
-                                style: TextStyle(
-                                  fontSize: isFeatured ? 14 : 13,
-                                  fontWeight: isFeatured ? FontWeight.w800 : FontWeight.w700,
-                                  color: const Color(0xFF2B2622),
-                                )),
-                          ),
-                          const SizedBox(width: 5),
-                          // 标签 pill 移到标题右侧（缩小确保单行）
-                          Flexible(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: colors.bg.withValues(alpha: 0.55),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(data.tag,
-                                  style: TextStyle(
-                                    fontSize: isFeatured ? 9 : 8.5,
-                                    fontWeight: FontWeight.w600,
-                                    color: colors.icon,
-                                    height: 1.2,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 3),
-                      // 描述（给更多空间，maxLines: 3）
-                      Expanded(
-                        child: Text(data.desc,
-                            style: TextStyle(
-                              fontSize: isFeatured ? 11 : 10.5,
-                              color: const Color(0xFF7A7570),
-                              height: 1.35,
-                            ),
-                            maxLines: 3, overflow: TextOverflow.ellipsis),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              Expanded(flex: 55, child: Stack(children: [
+                Positioned.fill(child: Image.asset(data.assetPath, fit: BoxFit.cover, alignment: data.align)),
+                Positioned(top: 7, right: 7, child: Container(width: 28, height: 28,
+                  decoration: BoxDecoration(color: colors.bg, shape: BoxShape.circle,
+                    border: isFeatured ? Border.all(color: colors.icon.withValues(alpha: 0.3), width: 1.5) : null),
+                  child: Icon(data.icon, size: isFeatured ? 15 : 13, color: colors.icon))),
+                if (isFeatured) Positioned(top: 7, left: 7, child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(color: const Color(0xFF9B8AC4).withValues(alpha: 0.90), borderRadius: BorderRadius.circular(8)),
+                  child: const Text('推荐', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white)))),
+              ])),
+              Padding(padding: const EdgeInsets.fromLTRB(10, 8, 10, 10), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                  Text(data.title, style: TextStyle(fontSize: isFeatured ? 14 : 13, fontWeight: FontWeight.w700, color: const Color(0xFF2D2D2D))),
+                  Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(color: colors.bg.withValues(alpha: 0.60), borderRadius: BorderRadius.circular(6)),
+                    child: Text(data.tag, style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: colors.icon))),
+                ]),
+                const SizedBox(height: 3),
+                Text(data.desc, maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, height: 1.35, color: const Color(0xFF888888))),
+              ])),
             ],
           ),
         ),
@@ -662,12 +612,202 @@ class _FeatCard extends StatelessWidget {
   }
 }
 
+// ─── 视频自动播放卡片（video_player + 缩略图兜底）───────────────
+// 核心策略：缩略图 Image.asset 始终渲染为底层（保证永不空白），
+// VideoPlayer 初始化成功后叠加在上方。即使 video_player 失败，用户仍看到首帧图。
+class _AutoPlayVideoCard extends StatefulWidget {
+  const _AutoPlayVideoCard({required this.data, this.isFeatured = false});
+  final _FeatCardData data;
+  final bool isFeatured;
+
+  @override
+  State<_AutoPlayVideoCard> createState() => _AutoPlayVideoCardState();
+}
+
+class _AutoPlayVideoCardState extends State<_AutoPlayVideoCard> {
+  VideoPlayerController? _controller;
+  /// 视频是否已初始化成功并可播放
+  bool _videoReady = false;
+  /// 用户已点击播放，正在加载中（显示 loading 指示器）
+  bool _isLoading = false;
+
+  static const _macaronColors = [
+    (bg: Color(0xFFD6EEF5), icon: Color(0xFF5BA8C8)),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    // ★ 恢复首页自动播放：视频已压缩到 0.82MB（原 15.5MB），云端可秒加载。
+    //   延迟 300ms 让底层缩略图先稳定渲染，避免首帧闪烁；加载成功后自动覆盖播放。
+    //   失败则回落到播放按钮（用户可点击重试），永不出现暗色/VIDEO/白屏。
+    Future.delayed(const Duration(milliseconds: 300), _startVideo);
+  }
+
+  /// 用户点击播放按钮 → 开始加载视频
+  Future<void> _startVideo() async {
+    if (_videoReady || _isLoading) return;
+    setState(() => _isLoading = true);
+
+    try { _controller?.dispose(); } catch (_) {}
+    _controller = null;
+
+    try {
+      final assetKey = widget.data.videoAssetPath!;
+      final webAssetPath = 'assets/$assetKey';
+      final videoUrl = Uri.base.resolve(webAssetPath);
+
+      final c = VideoPlayerController.networkUrl(videoUrl);
+      _controller = c;
+      await c.initialize(); // 这里会等待视频下载+解码，云端可能需要 5-20 秒
+      if (!mounted) { c.dispose(); return; }
+      c.setLooping(true);
+      c.setVolume(0);
+      c.play();
+      if (mounted) setState(() { _videoReady = true; _isLoading = false; });
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+      // 失败：回到缩略图+播放按钮状态，用户可再点重试
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = _macaronColors[0];
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ★ 视频/图片区：底层缩略图 + 上层 VideoPlayer（就绪时）+ 播放按钮/loading（未就绪时）
+            Expanded(
+              flex: 55,
+              child: ClipRRect(
+                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                child: GestureDetector(
+                  onTap: _videoReady ? () => Navigator.pushNamed(context, widget.data.route) : _startVideo,
+                  behavior: HitTestBehavior.opaque,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // === 底层：静态缩略图（始终渲染，永不空白/暗/VIDEO）===
+                      Image.asset(widget.data.assetPath, fit: BoxFit.cover, alignment: widget.data.align),
+                      // === 上层：VideoPlayer（就绪后直接覆盖）===
+                      if (_videoReady && _controller != null && _controller!.value.isInitialized)
+                        FittedBox(
+                          fit: BoxFit.cover,
+                          clipBehavior: Clip.hardEdge,
+                          alignment: widget.data.align,
+                          child: SizedBox(
+                            width: _controller!.value.size.width > 0 ? _controller!.value.size.width : 1280,
+                            height: _controller!.value.size.height > 0 ? _controller!.value.size.height : 720,
+                            child: VideoPlayer(_controller!),
+                          ),
+                        ),
+                      // === Loading 指示器：点击后加载中 ===
+                      if (_isLoading && !_videoReady)
+                        Center(
+                          child: Container(
+                            width: 44, height: 44,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.50),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const SizedBox(
+                              width: 20, height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            ),
+                          ),
+                        ),
+                      // === 播放按钮：未加载时显示（白边+半透明底）===
+                      if (!_videoReady && !_isLoading)
+                        Center(
+                          child: Container(
+                            width: 48, height: 48,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.40),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.80), width: 2.5),
+                            ),
+                            child: Icon(LucideIcons.play, size: 22, color: Colors.white),
+                          ),
+                        ),
+                      // 右上角图标标签
+                      Positioned(
+                        top: 7, right: 7,
+                        child: Container(
+                          width: 28, height: 28,
+                          decoration: BoxDecoration(color: colors.bg, shape: BoxShape.circle),
+                          child: Icon(widget.data.icon, size: 13, color: colors.icon),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+              // 文字区（点击导航到详情页）
+              InkWell(
+                onTap: () => Navigator.pushNamed(context, widget.data.route),
+                borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(widget.data.title,
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF2D2D2D))),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: colors.bg.withValues(alpha: 0.60),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(widget.data.tag,
+                                style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: colors.icon)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Text(widget.data.desc, maxLines: 2, overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11, height: 1.35, color: Color(0xFF888888))),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+    );
+  }
+}
+
 /// 毛孩近照 —— Pinterest 双行瀑布流（**等高 + 宽度随照片真实比例 + 完整显示不裁切**）
 class _RecentPhotosRow extends StatelessWidget {
-  // 上排 15 张
+  // 上排 15 张（前 5 张为本次新增照片，首页优先展示）
   static const _topRow = [
-    'yuanbao_098.jpg', 'yuanbao_080.jpg', 'yuanbao_070.jpg', 'yuanbao_060.jpg',
-    'xiaomianhua_005.jpg', 'xiaotangyuan_008.jpg', 'friend_007.jpg', 'yuanbao_090.jpg',
+    'yuanbao_2157.jpg', 'yuanbao_2158.jpg', 'yuanbao_2161.jpg', // 2026-08-09 新增金元宝近照
+    'yuanbao_141.jpg', 'yuanbao_140.jpg', 'xiaotangyuan_026.jpg', 'xiaomianhua_021.jpg', 'yuanbao_123.jpg',
+    'yuanbao_098.jpg', 'xiaomianhua_005.jpg', 'xiaotangyuan_008.jpg', 'friend_007.jpg', 'yuanbao_090.jpg',
     'xiaomianhua_010.jpg', 'friend_020.jpg', 'yuanbao_050.jpg', 'xiaotangyuan_014.jpg',
     'friend_030.jpg', 'xiaomianhua_015.jpg', 'yuanbao_085.jpg',
   ];
@@ -881,6 +1021,8 @@ class _CameraPageState extends ConsumerState<CameraPage> {
   static const _modes = ['拍照', '视频', '宠物'];
   bool _captured = false;
   Uint8List? _lastBytes;
+  bool _recording = false; // 视频录制进行中
+  bool _audioUnsupported = false; // 本设备/浏览器不支持录制音频，已降级无声
 
   @override
   void initState() {
@@ -903,11 +1045,30 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     }
   }
 
-  Future<void> _setupController(CameraDescription desc) async {
+  Future<void> _setupController(CameraDescription desc, {bool enableAudio = false}) async {
     _controller?.dispose();
-    final c = CameraController(desc, ResolutionPreset.medium, enableAudio: false);
-    _controller = c;
-    await c.initialize();
+    _recording = false;
+    CameraController? c;
+    try {
+      c = CameraController(desc, ResolutionPreset.medium, enableAudio: enableAudio);
+      await c.initialize();
+    } catch (e) {
+      if (enableAudio) {
+        // 部分浏览器/设备 getUserMedia 不支持音频轨，降级为无声视频录制
+        try {
+          c = CameraController(desc, ResolutionPreset.medium, enableAudio: false);
+          await c.initialize();
+          _audioUnsupported = true;
+        } catch (e2) {
+          if (mounted) setState(() => _error = '相机启动失败：$e2');
+          return;
+        }
+      } else {
+        if (mounted) setState(() => _error = '相机启动失败：$e');
+        return;
+      }
+    }
+    _controller = c!;
     if (mounted) setState(() => _isInitialized = true);
   }
 
@@ -921,20 +1082,16 @@ class _CameraPageState extends ConsumerState<CameraPage> {
   }
 
   Future<void> _switchLens() async {
-    if (_cameras.length < 2) return;
+    if (_cameras.length < 2 || _recording) return;
     _cameraIndex = (_cameraIndex + 1) % _cameras.length;
     setState(() => _isInitialized = false);
-    await _setupController(_cameras[_cameraIndex]);
+    await _setupController(_cameras[_cameraIndex], enableAudio: _modeIndex == 1);
   }
 
   Future<void> _capture() async {
     if (_controller == null || !_isInitialized) return;
     if (_modeIndex == 1) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('视频录制将在后续切片接入')),
-        );
-      }
+      await _toggleRecording();
       return;
     }
     try {
@@ -954,6 +1111,65 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         );
       }
     }
+  }
+
+  /// 视频模式：开始/停止录制。停止后把视频字节存入短片库，可在「一键成片」加字幕配乐。
+  Future<void> _toggleRecording() async {
+    if (_controller == null || !_isInitialized) return;
+    if (_recording) {
+      // 停止录制
+      try {
+        final x = await _controller!.stopVideoRecording();
+        final bytes = await x.readAsBytes();
+        ref.read(shortVideosProvider.notifier).add(
+              ShortVideoEdit(
+                videoBytes: bytes,
+                // camera_web 录制为 webm（iPhone Safari 同为 Web 端）
+                mimeType: 'video/webm',
+                trimStartMs: 0,
+                trimEndMs: 0,
+                caption: '',
+                captionStyle: 0,
+              ),
+            );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('已存入短片库，去「一键成片」加字幕配乐')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('停止录制失败：$e')),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _recording = false);
+      }
+      return;
+    }
+    // 开始录制
+    try {
+      await _controller!.startVideoRecording();
+      if (mounted) setState(() => _recording = true);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('开始录制失败：$e')),
+        );
+      }
+    }
+  }
+
+  /// 切换拍照/视频/宠物模式；进入视频模式时重建控制器以开启音频轨。
+  Future<void> _switchMode(int i) async {
+    if (i == _modeIndex || _recording || _cameras.isEmpty) return;
+    setState(() {
+      _modeIndex = i;
+      _isInitialized = false;
+      _audioUnsupported = false;
+    });
+    await _setupController(_cameras[_cameraIndex], enableAudio: i == 1);
   }
 
   @override
@@ -989,6 +1205,32 @@ class _CameraPageState extends ConsumerState<CameraPage> {
               ),
             ),
           if (_captured) Positioned.fill(child: Container(color: Colors.white)),
+          if (_recording)
+            Positioned(
+              top: 72,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(width: 9, height: 9, decoration: const BoxDecoration(color: Color(0xFFFF3B30), shape: BoxShape.circle)),
+                      const SizedBox(width: 8),
+                      Text(
+                        _audioUnsupported ? '录制中（无声）' : '录制中',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white.withValues(alpha: 0.9)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -1035,7 +1277,7 @@ class _CameraPageState extends ConsumerState<CameraPage> {
                         children: List.generate(_modes.length, (i) {
                           final active = i == _modeIndex;
                           return GestureDetector(
-                            onTap: () => setState(() => _modeIndex = i),
+                            onTap: _recording ? null : () => _switchMode(i),
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 200),
                               margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -1084,10 +1326,21 @@ class _CameraPageState extends ConsumerState<CameraPage> {
                             height: 76,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              border: Border.all(color: const Color(0xFFF2864B), width: 4),
+                              border: Border.all(
+                                color: _recording ? const Color(0xFFFF3B30) : const Color(0xFFF2864B),
+                                width: 4,
+                              ),
                             ),
-                            child: const Center(
-                              child: SizedBox(width: 60, height: 60, child: DecoratedBox(decoration: BoxDecoration(shape: BoxShape.circle, color: Color(0xFFF2864B)))),
+                            child: Center(
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                width: _recording ? 28 : 60,
+                                height: _recording ? 28 : 60,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(_recording ? 8 : 30),
+                                  color: _recording ? const Color(0xFFFF3B30) : const Color(0xFFF2864B),
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -1529,6 +1782,19 @@ class _AlbumView extends StatefulWidget {
 class _AlbumViewState extends State<_AlbumView> {
   bool _byTime = false;
   String? _selectedPetId; // null = 全部宠物
+
+  @override
+  void initState() {
+    super.initState();
+    // 从路由参数读取 petId，自动筛选到对应宠物相册
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map<String, dynamic>) {
+      final petId = args['petId'] as String?;
+      if (petId != null && petId.isNotEmpty) {
+        _selectedPetId = petId;
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2059,88 +2325,596 @@ class _PhotoDialog extends StatelessWidget {
   }
 }
 
-/// 短片剪辑页（占位）。
-class ShortVideoPage extends StatelessWidget {
-  const ShortVideoPage({super.key});
-  @override
-  Widget build(BuildContext context) => _Shell(
-        title: '短片剪辑',
-        icon: LucideIcons.clapperboard,
-        body: const Center(child: Text('时间轴 + 一键成片占位 · 后续接入图生视频 API + ffmpeg')),
-      );
-}
-
-/// P 图编辑页（占位）。
-class RetouchPage extends StatelessWidget {
-  const RetouchPage({super.key});
-  @override
-  Widget build(BuildContext context) => _Shell(
-        title: 'P 图',
-        icon: LucideIcons.sparkles,
-        body: const Center(child: Text('编辑画布 + 工具 Tab 占位 · 后续接入宠物专用模型')),
-      );
-}
-
 /// 宠物档案页：金元宝档案卡 + 统计。
-class PetProfilePage extends ConsumerWidget {
+/// 成长手记页：宠物切换 + 档案卡 + 录入（体重/疫苗/趣事）+ 时间线。
+/// 记录本地持久化（Hive），按宠物隔离。
+class PetProfilePage extends ConsumerStatefulWidget {
   const PetProfilePage({super.key});
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PetProfilePage> createState() => _PetProfilePageState();
+}
+
+class _PetProfilePageState extends ConsumerState<PetProfilePage> {
+  String? _selectedPetId;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
     final petsAsync = ref.watch(petsProvider);
-    final photosAsync = ref.watch(photosProvider);
-    final albumsAsync = ref.watch(albumsProvider);
     return _Shell(
-      title: '宠物档案',
-      icon: LucideIcons.user,
+      title: '成长手记',
+      icon: LucideIcons.bookOpen,
       body: petsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('加载失败：$e')),
-        data: (pets) => photosAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (_, __) => const SizedBox.shrink(),
-          data: (photos) {
-            final pet = pets.isNotEmpty ? pets.first : null;
-            if (pet == null) {
-              return const Center(child: Text('暂无宠物档案'));
-            }
-            final albums = albumsAsync.maybeWhen(
-              data: (a) => a.where((x) => x.petId == pet.id).toList(),
-              orElse: () => <Album>[],
-            );
-            final latest = photos.isNotEmpty ? photos.first.capturedAt : null;
-            return ListView(
+        data: (pets) {
+          if (pets.isEmpty) return const Center(child: Text('暂无宠物档案'));
+          _selectedPetId ??= pets.first.id;
+          final pet =
+              pets.firstWhere((p) => p.id == _selectedPetId, orElse: () => pets.first);
+          final photosAsync = ref.watch(photosProvider);
+          final recordsAsync = ref.watch(growthRecordsProvider(pet.id));
+          return recordsAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (_, __) => const Center(child: Text('记录加载失败')),
+            data: (records) => ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                Center(
-                  child: CircleAvatar(
-                    radius: 48,
-                    backgroundImage: AssetImage(pet.avatarPath),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Center(
-                  child: Text(pet.name, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: context.tokens.textPrimary)),
-                ),
-                Center(
-                  child: Text('${pet.breed} · ${pet.ageYears}岁', style: TextStyle(color: context.tokens.textSecondary)),
-                ),
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(pet.bio, textAlign: TextAlign.center, style: TextStyle(color: context.tokens.textSecondary, fontSize: 13)),
+                _PetSwitch(
+                  pets: pets,
+                  selectedId: pet.id,
+                  onSelect: (id) => setState(() => _selectedPetId = id),
                 ),
                 const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _StatTile(icon: LucideIcons.image, label: '照片', value: '${photos.length}'),
-                    _StatTile(icon: LucideIcons.bookOpen, label: '相册', value: '${albums.length}'),
-                    _StatTile(icon: LucideIcons.calendar, label: '最近拍', value: latest == null ? '—' : '${latest.month}/${latest.day}'),
-                  ],
+                _PetHeaderCard(
+                  pet: pet,
+                  recordCount: records.length,
+                  photoCount: photosAsync.maybeWhen(
+                    data: (p) => p.where((x) => x.petId == pet.id).length,
+                    orElse: () => 0,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                _buildAddButtons(context, pet.id),
+                const SizedBox(height: 22),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text('成长时间线',
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: t.textPrimary)),
+                ),
+                const SizedBox(height: 12),
+                if (records.isEmpty)
+                  const _EmptyTimeline()
+                else
+                  ...records.map(
+                    (r) => _TimelineItem(
+                      record: r,
+                      onDelete: () => ref
+                          .read(growthRecordsMutationProvider)
+                          .remove(pet.id, r.id),
+                    ),
+                  ),
+                const SizedBox(height: 24),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildAddButtons(BuildContext context, String petId) {
+    return Row(
+      children: [
+        Expanded(
+          child: _AddButton(
+            type: GrowthType.weight,
+            onTap: () => _showAddSheet(context, petId, GrowthType.weight),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _AddButton(
+            type: GrowthType.vaccine,
+            onTap: () => _showAddSheet(context, petId, GrowthType.vaccine),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _AddButton(
+            type: GrowthType.note,
+            onTap: () => _showAddSheet(context, petId, GrowthType.note),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showAddSheet(BuildContext context, String petId, GrowthType type) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AddRecordSheet(
+        type: type,
+        onSubmit: (record) {
+          ref.read(growthRecordsMutationProvider).add(petId, record);
+          Navigator.pop(context);
+        },
+      ),
+    );
+  }
+}
+
+/// 宠物切换横滑（4 只头像 + 名字，修掉「只显示第一只」的缺口）。
+class _PetSwitch extends StatelessWidget {
+  const _PetSwitch({
+    required this.pets,
+    required this.selectedId,
+    required this.onSelect,
+  });
+  final List<Pet> pets;
+  final String selectedId;
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return SizedBox(
+      height: 72,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: pets.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        itemBuilder: (c, i) {
+          final pet = pets[i];
+          final active = pet.id == selectedId;
+          return GestureDetector(
+            onTap: () => onSelect(pet.id),
+            child: Column(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: active ? t.brand : Colors.transparent,
+                      width: 3,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: ClipOval(
+                    child: Image.asset(pet.avatarPath, fit: BoxFit.cover),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  pet.name,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                    color: active ? t.brand : t.textSecondary,
+                  ),
                 ),
               ],
-            );
-          },
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// 宠物档案卡：头像 + 名字 + 品种年龄 + 统计。
+class _PetHeaderCard extends StatelessWidget {
+  const _PetHeaderCard({
+    required this.pet,
+    required this.recordCount,
+    required this.photoCount,
+  });
+  final Pet pet;
+  final int recordCount;
+  final int photoCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: t.surface,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          CircleAvatar(
+            radius: 42,
+            backgroundImage: AssetImage(pet.avatarPath),
+          ),
+          const SizedBox(height: 10),
+          Text(pet.name,
+              style: TextStyle(
+                  fontSize: 19, fontWeight: FontWeight.w800, color: t.textPrimary)),
+          Text('${pet.breed} · ${pet.ageLabel}',
+              style: TextStyle(color: t.textSecondary)),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(pet.bio,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: t.textSecondary, fontSize: 13)),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _StatTile(icon: LucideIcons.image, label: '照片', value: '$photoCount'),
+              _StatTile(icon: LucideIcons.bookOpen, label: '记录', value: '$recordCount'),
+              _StatTile(icon: LucideIcons.calendar, label: '年龄', value: pet.ageLabel),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 录入按钮（体重 / 疫苗 / 趣事）。
+class _AddButton extends StatelessWidget {
+  const _AddButton({required this.type, required this.onTap});
+  final GrowthType type;
+  final VoidCallback onTap;
+
+  (Color, Color, String) get _style {
+    switch (type) {
+      case GrowthType.weight:
+        return (const Color(0xFFD6EEF5), const Color(0xFF5BA8C8), '体重');
+      case GrowthType.vaccine:
+        return (const Color(0xFFFFE4DD), const Color(0xFFD4826A), '疫苗');
+      case GrowthType.note:
+        return (const Color(0xFFE8E0F6), const Color(0xFF9B8AC4), '趣事');
+    }
+  }
+
+  IconData get _icon {
+    switch (type) {
+      case GrowthType.weight:
+        return LucideIcons.scale;
+      case GrowthType.vaccine:
+        return LucideIcons.syringe;
+      case GrowthType.note:
+        return LucideIcons.heart;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final (bg, fg, label) = _style;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 84,
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(_icon, size: 22, color: fg),
+            const SizedBox(height: 6),
+            Text(label,
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: fg)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 时间线单条记录。
+class _TimelineItem extends StatelessWidget {
+  const _TimelineItem({required this.record, required this.onDelete});
+  final GrowthRecord record;
+  final VoidCallback onDelete;
+
+  (Color, Color, IconData, String) get _style {
+    switch (record.type) {
+      case GrowthType.weight:
+        return (const Color(0xFFD6EEF5), const Color(0xFF5BA8C8),
+            LucideIcons.scale, '体重');
+      case GrowthType.vaccine:
+        return (const Color(0xFFFFE4DD), const Color(0xFFD4826A),
+            LucideIcons.syringe, '疫苗');
+      case GrowthType.note:
+        return (const Color(0xFFE8E0F6), const Color(0xFF9B8AC4),
+            LucideIcons.heart, '趣事');
+    }
+  }
+
+  String get _valueText {
+    switch (record.type) {
+      case GrowthType.weight:
+        return '${record.value} kg';
+      case GrowthType.vaccine:
+        return record.value;
+      case GrowthType.note:
+        return record.value;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final (bg, fg, icon, typeName) = _style;
+    final t = context.tokens;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: t.surface,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            margin: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+            child: Icon(icon, size: 20, color: fg),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(typeName,
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: fg)),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${record.date.year}-${record.date.month.toString().padLeft(2, '0')}-${record.date.day.toString().padLeft(2, '0')}',
+                        style: TextStyle(fontSize: 12, color: t.textSecondary),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(_valueText,
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: t.textPrimary)),
+                  if (record.note.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(record.note,
+                        style: TextStyle(fontSize: 13, color: t.textSecondary)),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: onDelete,
+            icon: Icon(LucideIcons.trash2, size: 18, color: t.textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyTimeline extends StatelessWidget {
+  const _EmptyTimeline();
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 36),
+      alignment: Alignment.center,
+      child: Column(
+        children: [
+          Icon(LucideIcons.clipboardList, size: 36, color: t.textSecondary),
+          const SizedBox(height: 10),
+          Text('还没有记录，点上方按钮添加第一条',
+              style: TextStyle(fontSize: 13, color: t.textSecondary)),
+        ],
+      ),
+    );
+  }
+}
+
+/// 录入底部弹层表单。
+class _AddRecordSheet extends StatefulWidget {
+  const _AddRecordSheet({required this.type, required this.onSubmit});
+  final GrowthType type;
+  final ValueChanged<GrowthRecord> onSubmit;
+
+  @override
+  State<_AddRecordSheet> createState() => _AddRecordSheetState();
+}
+
+class _AddRecordSheetState extends State<_AddRecordSheet> {
+  DateTime _date = DateTime.now();
+  final _valueCtl = TextEditingController();
+  final _noteCtl = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+
+  String get _title => switch (widget.type) {
+        GrowthType.weight => '记体重',
+        GrowthType.vaccine => '记疫苗',
+        GrowthType.note => '记趣事',
+      };
+
+  String get _valueLabel => switch (widget.type) {
+        GrowthType.weight => '体重 (kg)',
+        GrowthType.vaccine => '疫苗名称',
+        GrowthType.note => '趣事标题',
+      };
+
+  String get _noteLabel => switch (widget.type) {
+        GrowthType.note => '趣事内容',
+        GrowthType.vaccine => '备注（选填）',
+        GrowthType.weight => '备注（选填）',
+      };
+
+  @override
+  void dispose() {
+    _valueCtl.dispose();
+    _noteCtl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (!_formKey.currentState!.validate()) return;
+    final record = GrowthRecord(
+      id: 'rec_${DateTime.now().microsecondsSinceEpoch}',
+      type: widget.type,
+      date: _date,
+      value: _valueCtl.text.trim(),
+      note: _noteCtl.text.trim(),
+    );
+    widget.onSubmit(record);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return Container(
+      decoration: BoxDecoration(
+        color: t.bgBase,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.fromLTRB(
+          20, 16, 20, MediaQuery.of(context).viewInsets.bottom + 20),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.black12,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(_title,
+                style: TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.w800, color: t.textPrimary)),
+            const SizedBox(height: 16),
+            GestureDetector(
+              onTap: () async {
+                final d = await showDatePicker(
+                  context: context,
+                  initialDate: _date,
+                  firstDate: DateTime(2018),
+                  lastDate: DateTime.now(),
+                );
+                if (d != null) setState(() => _date = d);
+              },
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: t.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: t.brandSoft),
+                ),
+                child: Row(
+                  children: [
+                    Icon(LucideIcons.calendar, size: 18, color: t.brand),
+                    const SizedBox(width: 10),
+                    Text(
+                      '${_date.year}-${_date.month.toString().padLeft(2, '0')}-${_date.day.toString().padLeft(2, '0')}',
+                      style: TextStyle(fontSize: 14, color: t.textPrimary),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _valueCtl,
+              keyboardType: widget.type == GrowthType.weight
+                  ? TextInputType.number
+                  : TextInputType.text,
+              decoration: InputDecoration(
+                labelText: _valueLabel,
+                filled: true,
+                fillColor: t.surface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: t.brandSoft),
+                ),
+              ),
+              validator: (v) =>
+                  v == null || v.trim().isEmpty ? '此项必填' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _noteCtl,
+              maxLines: 3,
+              decoration: InputDecoration(
+                labelText: _noteLabel,
+                filled: true,
+                fillColor: t.surface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: t.brandSoft),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: FilledButton(
+                onPressed: _submit,
+                style: FilledButton.styleFrom(
+                  backgroundColor: t.brand,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(25),
+                  ),
+                ),
+                child: const Text('保存',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -2171,13 +2945,199 @@ class _StatTile extends StatelessWidget {
   }
 }
 
-/// 设置页（占位）。
-class SettingsPage extends StatelessWidget {
+/// 设置页：外观（浅色/深色/系统）+ 数据清除 + 关于。
+class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
   @override
-  Widget build(BuildContext context) => _Shell(
-        title: '设置',
-        icon: LucideIcons.settings,
-        body: const Center(child: Text('外观分段 + 演示数据开关占位')),
-      );
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = context.tokens;
+    final mode = ref.watch(themeModeProvider);
+    return _Shell(
+      title: '设置',
+      icon: LucideIcons.settings,
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          const _SettingsSectionTitle(icon: LucideIcons.palette, title: '外观'),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: t.surface,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))],
+            ),
+            child: SegmentedButton<ThemeMode>(
+              selected: {mode},
+              onSelectionChanged: (s) =>
+                  ref.read(themeModeProvider.notifier).setMode(s.first),
+              segments: const [
+                ButtonSegment(
+                  value: ThemeMode.light,
+                  icon: Icon(LucideIcons.sun),
+                  label: Text('浅色'),
+                ),
+                ButtonSegment(
+                  value: ThemeMode.dark,
+                  icon: Icon(LucideIcons.moon),
+                  label: Text('深色'),
+                ),
+                ButtonSegment(
+                  value: ThemeMode.system,
+                  icon: Icon(LucideIcons.smartphone),
+                  label: Text('系统'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 28),
+          const _SettingsSectionTitle(icon: LucideIcons.database, title: '数据'),
+          const SizedBox(height: 12),
+          _ActionRow(
+            icon: LucideIcons.image,
+            title: '清除相册缓存',
+            subtitle: '删除应用内拍摄的照片（不可恢复）',
+            onTap: () => _confirmClear(context, '相册',
+                () => ref.read(capturedPhotosProvider.notifier).clear()),
+          ),
+          const SizedBox(height: 12),
+          _ActionRow(
+            icon: LucideIcons.clapperboard,
+            title: '清除短片缓存',
+            subtitle: '删除已保存的萌宠短片（不可恢复）',
+            onTap: () => _confirmClear(context, '短片',
+                () => ref.read(shortVideosProvider.notifier).clear()),
+          ),
+          const SizedBox(height: 28),
+          const _SettingsSectionTitle(icon: LucideIcons.info, title: '关于'),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: t.surface,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(LucideIcons.pawPrint, color: t.brand, size: 22),
+                    const SizedBox(width: 8),
+                    Text('元宝拍拍',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: t.textPrimary)),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text('版本 1.0.0', style: TextStyle(fontSize: 13, color: t.textSecondary)),
+                const SizedBox(height: 8),
+                Text('为毛孩子记录每一刻 · 毛孩写真 · 毛孩相册 · 一键成片',
+                    style: TextStyle(fontSize: 13, color: t.textSecondary)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 清除缓存二次确认。
+Future<void> _confirmClear(BuildContext context, String label, VoidCallback clear) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: Text('清除$label缓存'),
+      content: Text('确定要删除所有$label吗？此操作不可恢复。'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          style: FilledButton.styleFrom(backgroundColor: context.tokens.brand),
+          child: const Text('清除'),
+        ),
+      ],
+    ),
+  );
+  if (ok == true) {
+    clear();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已清除$label缓存')));
+    }
+  }
+}
+
+/// 设置分区标题（图标 + 文字）。
+class _SettingsSectionTitle extends StatelessWidget {
+  const _SettingsSectionTitle({required this.icon, required this.title});
+  final IconData icon;
+  final String title;
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: t.brand),
+        const SizedBox(width: 8),
+        Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: t.textPrimary)),
+      ],
+    );
+  }
+}
+
+/// 设置操作行（图标 + 标题 + 副标题 + 右箭头）。
+class _ActionRow extends StatelessWidget {
+  const _ActionRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: t.surface,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(color: t.brandSoft, borderRadius: BorderRadius.circular(12)),
+                child: Icon(icon, size: 20, color: t.brand),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: t.textPrimary)),
+                    const SizedBox(height: 2),
+                    Text(subtitle, style: TextStyle(fontSize: 12, color: t.textSecondary)),
+                  ],
+                ),
+              ),
+              Icon(LucideIcons.chevronRight, color: t.textSecondary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

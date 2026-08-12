@@ -46,3 +46,15 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# 开发遗留备份（含大体积 MPO 原图，不进源码库）
+/_dev_backup/
+
+# 本地验证/调试产物
+firered_*.jpg
+firered_*.png
+retouch_verify*.png
+short_video_verify.png
+_denoise_*.png
+*_verify*.png
+*.log

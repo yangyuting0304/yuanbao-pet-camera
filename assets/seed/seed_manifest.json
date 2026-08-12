@@ -1424,6 +1424,278 @@
       "fileName": "xiaotangyuan_018.jpg",
       "capturedAt": "2026-07-24T11:23:32",
       "source": "seed"
+    },
+    {
+      "id": "yb123",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_123.jpg",
+      "capturedAt": "2026-07-31T15:16:00",
+      "source": "seed"
+    },
+    {
+      "id": "yb124",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_124.jpg",
+      "capturedAt": "2026-07-31T15:16:01",
+      "source": "seed"
+    },
+    {
+      "id": "yb125",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_125.jpg",
+      "capturedAt": "2026-07-31T15:16:02",
+      "source": "seed"
+    },
+    {
+      "id": "yb126",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_126.jpg",
+      "capturedAt": "2026-07-31T15:16:03",
+      "source": "seed"
+    },
+    {
+      "id": "yb127",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_127.jpg",
+      "capturedAt": "2026-07-31T15:16:04",
+      "source": "seed"
+    },
+    {
+      "id": "yb128",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_128.jpg",
+      "capturedAt": "2026-07-31T15:16:05",
+      "source": "seed"
+    },
+    {
+      "id": "yb129",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_129.jpg",
+      "capturedAt": "2026-07-31T15:16:06",
+      "source": "seed"
+    },
+    {
+      "id": "yb130",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_130.jpg",
+      "capturedAt": "2026-07-31T15:16:07",
+      "source": "seed"
+    },
+    {
+      "id": "yb131",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_131.jpg",
+      "capturedAt": "2026-07-31T15:16:08",
+      "source": "seed"
+    },
+    {
+      "id": "yb132",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_132.jpg",
+      "capturedAt": "2026-07-31T15:16:09",
+      "source": "seed"
+    },
+    {
+      "id": "yb133",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_133.jpg",
+      "capturedAt": "2026-07-31T15:16:10",
+      "source": "seed"
+    },
+    {
+      "id": "yb134",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_134.jpg",
+      "capturedAt": "2026-07-31T15:16:11",
+      "source": "seed"
+    },
+    {
+      "id": "yb135",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_135.jpg",
+      "capturedAt": "2026-07-31T15:16:12",
+      "source": "seed"
+    },
+    {
+      "id": "yb136",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_136.jpg",
+      "capturedAt": "2026-07-31T15:16:13",
+      "source": "seed"
+    },
+    {
+      "id": "yb137",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_137.jpg",
+      "capturedAt": "2026-07-31T15:16:14",
+      "source": "seed"
+    },
+    {
+      "id": "yb138",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_138.jpg",
+      "capturedAt": "2026-07-31T15:16:15",
+      "source": "seed"
+    },
+    {
+      "id": "yb139",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_139.jpg",
+      "capturedAt": "2026-07-31T15:16:16",
+      "source": "seed"
+    },
+    {
+      "id": "yb140",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_140.jpg",
+      "capturedAt": "2026-07-31T15:16:17",
+      "source": "seed"
+    },
+    {
+      "id": "yb141",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_141.jpg",
+      "capturedAt": "2026-07-31T15:16:18",
+      "source": "seed"
+    },
+    {
+      "id": "mh018",
+      "petId": "xiaomianhua",
+      "albumId": "a_mh_daily",
+      "fileName": "xiaomianhua_018.jpg",
+      "capturedAt": "2026-07-31T15:16:19",
+      "source": "seed"
+    },
+    {
+      "id": "mh019",
+      "petId": "xiaomianhua",
+      "albumId": "a_mh_daily",
+      "fileName": "xiaomianhua_019.jpg",
+      "capturedAt": "2026-07-31T15:16:20",
+      "source": "seed"
+    },
+    {
+      "id": "mh020",
+      "petId": "xiaomianhua",
+      "albumId": "a_mh_daily",
+      "fileName": "xiaomianhua_020.jpg",
+      "capturedAt": "2026-07-31T15:16:21",
+      "source": "seed"
+    },
+    {
+      "id": "mh021",
+      "petId": "xiaomianhua",
+      "albumId": "a_mh_daily",
+      "fileName": "xiaomianhua_021.jpg",
+      "capturedAt": "2026-07-31T15:16:22",
+      "source": "seed"
+    },
+    {
+      "id": "ty019",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_019.jpg",
+      "capturedAt": "2026-07-31T15:16:23",
+      "source": "seed"
+    },
+    {
+      "id": "ty020",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_020.jpg",
+      "capturedAt": "2026-07-31T15:16:24",
+      "source": "seed"
+    },
+    {
+      "id": "ty021",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_021.jpg",
+      "capturedAt": "2026-07-31T15:16:25",
+      "source": "seed"
+    },
+    {
+      "id": "ty022",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_022.jpg",
+      "capturedAt": "2026-07-31T15:16:26",
+      "source": "seed"
+    },
+    {
+      "id": "ty023",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_023.jpg",
+      "capturedAt": "2026-07-31T15:16:27",
+      "source": "seed"
+    },
+    {
+      "id": "ty024",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_024.jpg",
+      "capturedAt": "2026-07-31T15:16:28",
+      "source": "seed"
+    },
+    {
+      "id": "ty025",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_025.jpg",
+      "capturedAt": "2026-07-31T15:16:29",
+      "source": "seed"
+    },
+    {
+      "id": "ty026",
+      "petId": "xiaotangyuan",
+      "albumId": "a_ty_daily",
+      "fileName": "xiaotangyuan_026.jpg",
+      "capturedAt": "2026-07-31T15:16:30",
+      "source": "seed"
+    },
+    {
+      "id": "yb142",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_2157.jpg",
+      "capturedAt": "2026-08-09T18:21:00",
+      "source": "seed"
+    },
+    {
+      "id": "yb143",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_2158.jpg",
+      "capturedAt": "2026-08-09T18:21:00",
+      "source": "seed"
+    },
+    {
+      "id": "yb144",
+      "petId": "yuanbao",
+      "albumId": "a_daily",
+      "fileName": "yuanbao_2161.jpg",
+      "capturedAt": "2026-08-09T18:21:00",
+      "source": "seed"
     }
   ]
 }

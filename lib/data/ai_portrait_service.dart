@@ -104,11 +104,20 @@ class AiPortraitService {
   static const String _apiKey =
       String.fromEnvironment('DASHSCOPE_API_KEY', defaultValue: '');
 
+  // Web 部署走云函数代理（避免 key 进客户端 + 绕过 CORS）。
+  // 构建时：--dart-define=AI_PROXY_URL=https://<你的云函数URL>
+  static const String _proxyUrl =
+      String.fromEnvironment('AI_PROXY_URL', defaultValue: '');
+
   static const String _endpoint =
       'https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis';
 
   /// 生成宠物 AI 写真。
   Future<PortraitResult> generatePortrait(PortraitRequest req) async {
+    if (_proxyUrl.isNotEmpty) {
+      // Web / 云部署：服务端代理调 DashScope（图生图需源图），返回 base64 图。
+      return _generateViaProxy(req);
+    }
     if (_apiKey.isEmpty) {
       // 演示模式：未配置 API Key，模拟耗时后回显源图。
       await Future<void>.delayed(const Duration(seconds: 2));
@@ -131,6 +140,30 @@ class AiPortraitService {
     return PortraitResult(
       imageBytes: resp.bodyBytes,
       imageUrl: url,
+      styleId: req.styleId,
+    );
+  }
+
+  /// 经代理生成（Web 安全路径，图生图需上传源图字节）。
+  Future<PortraitResult> _generateViaProxy(PortraitRequest req) async {
+    final resp = await http.post(
+      Uri.parse(_proxyUrl),
+      headers: <String, String>{'Content-Type': 'application/json'},
+      body: jsonEncode(<String, String>{
+        'styleId': req.styleId,
+        'imageBase64': base64Encode(req.sourceBytes),
+      }),
+    );
+    if (resp.statusCode != 200) {
+      throw AiPortraitException('代理返回错误：${resp.statusCode} ${resp.body}');
+    }
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    if (data['error'] != null) {
+      throw AiPortraitException('代理错误：${data['error']}');
+    }
+    final base64 = data['imageBase64'] as String;
+    return PortraitResult(
+      imageBytes: base64Decode(base64),
       styleId: req.styleId,
     );
   }

@@ -1,0 +1,106 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:pet_camera/app/app.dart';
+import 'package:pet_camera/data/captured_photos.dart';
+
+void main() async {
+  // camera 插件需要 binding 初始化（权限/相机原生通道）
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Hive 持久化（可选）：初始化失败不阻塞 App 启动
+  try {
+    await Hive.initFlutter();
+    await Hive.openBox(kCapturedBox);
+  } catch (e) {
+    debugPrint('Hive/IndexedDB 不可用，使用内存模式: $e');
+  }
+
+  // 全局错误捕获
+  FlutterError.onError = (FlutterErrorDetails details) {
+    debugPrint('Flutter 错误: ${details.exception}');
+    debugPrint('堆栈: ${details.stack}');
+  };
+
+  runApp(
+    const ProviderScope(
+      child: ErrorCaptureWidget(child: PetCameraApp()),
+    ),
+  );
+}
+
+/// 捕获所有未处理异常并在屏幕上显示（替代白屏）
+class ErrorCaptureWidget extends StatefulWidget {
+  final Widget child;
+  const ErrorCaptureWidget({super.key, required this.child});
+
+  @override
+  State<ErrorCaptureWidget> createState() => _ErrorCaptureWidgetState();
+}
+
+class _ErrorCaptureWidgetState extends State<ErrorCaptureWidget> {
+  Object? _error;
+  StackTrace? _stack;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
+      if (mounted) {
+        setState(() {
+          _error = error;
+          _stack = stack;
+        });
+      }
+      return true; // 已处理
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_error != null) {
+      return Material(
+        color: const Color(0xFFF5F0FF),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('App 出错了',
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF6B4C9A))),
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFFF6B6B)),
+                  ),
+                  child: Text('$_error',
+                      style: const TextStyle(color: Color(0xFFC0392B), fontSize: 14)),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Text('$_stack',
+                        style: const TextStyle(color: Colors.grey, fontSize: 11, fontFamily: 'monospace')),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => setState(() { _error = null; _stack = null; }),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFA950)),
+                  child: const Text('重试', style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return widget.child;
+  }
+}

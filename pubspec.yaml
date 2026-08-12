@@ -12,6 +12,12 @@ dependencies:
     sdk: flutter
   # 状态管理（Spec 锁定 Riverpod 3.x）
   flutter_riverpod: ^3.2.1
+  # 短片剪辑：视频预览/播放（Web 用 HTML5 video）
+  video_player: ^2.8.0
+  # 短片剪辑：选取本地视频/音频文件（Web 返回字节流）
+  file_picker: ^8.0.0
+  # 短片剪辑：配乐播放（与原声叠加）
+  audioplayers: ^5.2.0
   # 图标库（Spec 锁定 Lucide，全 App 不混用、禁 emoji）
   # 使用 lucide_flutter（官方维护，兼容 Dart 3.12+，替代已停更的 lucide_icons）
   lucide_flutter: ^1.25.0
@@ -19,6 +25,9 @@ dependencies:
   camera: ^0.11.1
   # HTTP 客户端（切片3：AI 写真云端 API 调用）
   http: ^1.2.0
+  hive_flutter: ^1.1.0
+  # 全站备案号 Footer：点击跳转工信部备案管理系统
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:

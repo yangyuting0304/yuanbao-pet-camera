@@ -1,0 +1,15 @@
+{
+  "name": "firered-edit-proxy",
+  "version": "1.0.0",
+  "description": "毛孩美颜 - FireRed Image Edit 代理（ModelScope），持有 key + COS 中转 + 异步轮询",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "cos-nodejs-sdk-v5": "^1.3.0"
+  }
+}
