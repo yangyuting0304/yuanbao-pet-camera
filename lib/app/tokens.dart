@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-/// 设计 Token（Spec §8 锁定）：暖橘 brand + 深青 ink 双色，禁紫粉渐变。
-/// 全部颜色经 Token 引用，禁止硬编码。
+/// 设计 Token。
+/// 全部颜色经 Token 引用，避免页面层继续写散色值。
 class AppTokens extends ThemeExtension<AppTokens> {
   const AppTokens({
     required this.brand,
@@ -11,6 +11,7 @@ class AppTokens extends ThemeExtension<AppTokens> {
     required this.surface,
     required this.textPrimary,
     required this.textSecondary,
+    required this.textTertiary,
     required this.success,
     required this.warning,
     required this.error,
@@ -24,37 +25,44 @@ class AppTokens extends ThemeExtension<AppTokens> {
   final Color surface;
   final Color textPrimary;
   final Color textSecondary;
+  final Color textTertiary;
   final Color success;
   final Color warning;
   final Color error;
   final Color info;
 
   static const light = AppTokens(
-    brand: Color(0xFFF2864B),
-    brandSoft: Color(0xFFFAD9C6),
-    ink: Color(0xFF1F6F6B),
-    bgBase: Color(0xFFFAF7F2),
+    // 产品主色统一改为 FEDE2C。
+    brand: Color(0xFFFEDE2C),
+    // 辅助色统一改为 79FAC3。
+    brandSoft: Color(0xFF79FAC3),
+    ink: Color(0xFF79FAC3),
+    // 页面背景统一改为 F6F8FA。
+    bgBase: Color(0xFFF6F8FA),
     surface: Color(0xFFFFFFFF),
-    textPrimary: Color(0xFF2B2622),
-    textSecondary: Color(0xFF7A726A),
-    success: Color(0xFF3F8F5B),
-    warning: Color(0xFFE0A33C),
-    error: Color(0xFFC8503C),
-    info: Color(0xFF2E7D8A),
+    textPrimary: Color(0xFF000000),
+    textSecondary: Color(0xFF999999),
+    textTertiary: Color(0xFFB4B4B4),
+    success: Color(0xFF15C87D),
+    warning: Color(0xFFFF4E62),
+    error: Color(0xFFFF4E62),
+    info: Color(0xFF4DA6FF),
   );
 
   static const dark = AppTokens(
-    brand: Color(0xFFF4975C),
-    brandSoft: Color(0xFF5A3A2C),
-    ink: Color(0xFF2E8B86),
-    bgBase: Color(0xFF181614),
-    surface: Color(0xFF242120),
-    textPrimary: Color(0xFFF2ECE2),
-    textSecondary: Color(0xFFA89E94),
-    success: Color(0xFF3F8F5B),
-    warning: Color(0xFFE0A33C),
-    error: Color(0xFFC8503C),
-    info: Color(0xFF2E7D8A),
+    // 深色模式先沿用同一套品牌色，避免主题切换后语义跑偏。
+    brand: Color(0xFFFEDE2C),
+    brandSoft: Color(0xFF79FAC3),
+    ink: Color(0xFF79FAC3),
+    bgBase: Color(0xFFF6F8FA),
+    surface: Color(0xFFFFFFFF),
+    textPrimary: Color(0xFF000000),
+    textSecondary: Color(0xFF999999),
+    textTertiary: Color(0xFFB4B4B4),
+    success: Color(0xFF15C87D),
+    warning: Color(0xFFFF4E62),
+    error: Color(0xFFFF4E62),
+    info: Color(0xFF4DA6FF),
   );
 
   @override
@@ -66,6 +74,7 @@ class AppTokens extends ThemeExtension<AppTokens> {
     Color? surface,
     Color? textPrimary,
     Color? textSecondary,
+    Color? textTertiary,
     Color? success,
     Color? warning,
     Color? error,
@@ -79,6 +88,7 @@ class AppTokens extends ThemeExtension<AppTokens> {
       surface: surface ?? this.surface,
       textPrimary: textPrimary ?? this.textPrimary,
       textSecondary: textSecondary ?? this.textSecondary,
+      textTertiary: textTertiary ?? this.textTertiary,
       success: success ?? this.success,
       warning: warning ?? this.warning,
       error: error ?? this.error,
@@ -97,6 +107,7 @@ class AppTokens extends ThemeExtension<AppTokens> {
       surface: Color.lerp(surface, other.surface, t)!,
       textPrimary: Color.lerp(textPrimary, other.textPrimary, t)!,
       textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
+      textTertiary: Color.lerp(textTertiary, other.textTertiary, t)!,
       success: Color.lerp(success, other.success, t)!,
       warning: Color.lerp(warning, other.warning, t)!,
       error: Color.lerp(error, other.error, t)!,
@@ -107,4 +118,45 @@ class AppTokens extends ThemeExtension<AppTokens> {
 
 extension AppTokensX on BuildContext {
   AppTokens get tokens => Theme.of(this).extension<AppTokens>()!;
+}
+
+/// 全局 UI 规范常量。
+/// 所有页面统一使用这里的尺寸，避免每个文件重复写字面值。
+abstract final class AppUi {
+  /// 图标尺寸只保留 16 / 20 / 24 三档。
+  static const double iconSmall = 16;
+  static const double iconMedium = 20;
+  static const double iconLarge = 24;
+
+  /// 页面左右留白统一为 16。
+  static const double pagePadding = 16;
+
+  /// 字号只保留 12 / 14 / 16 / 20 四档。
+  static const double fontCaption = 12;
+  static const double fontBody = 14;
+  static const double fontTitle = 16;
+  static const double fontHeadline = 20;
+
+  /// 间距统一使用 4 的倍数，最小 4，最大 32。
+  static const double space4 = 4;
+  static const double space8 = 8;
+  static const double space12 = 12;
+  static const double space16 = 16;
+  static const double space20 = 20;
+  static const double space24 = 24;
+  static const double space28 = 28;
+  static const double space32 = 32;
+
+  /// 所有卡片圆角统一为 16。
+  static const double radiusCard = 16;
+
+  /// 行高统一按“字号 + 8”计算。
+  static double lineHeight(double fontSize) => (fontSize + 8) / fontSize;
+}
+
+/// 页面层常用的基础颜色常量。
+abstract final class AppColors {
+  static const Color pageBackground = Color(0xFFF6F8FA);
+  static const Color divider = Color(0xFFF0ECE6);
+  static const Color iconPlate = Color(0x80000000);
 }

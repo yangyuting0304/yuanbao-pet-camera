@@ -18,8 +18,9 @@ dependencies:
   file_picker: ^8.0.0
   # 短片剪辑：配乐播放（与原声叠加）
   audioplayers: ^5.2.0
-  # 图标库（Spec 锁定 Lucide，全 App 不混用、禁 emoji）
-  # 使用 lucide_flutter（官方维护，兼容 Dart 3.12+，替代已停更的 lucide_icons）
+  # SVG 图标渲染：用于接入 MingCute 图标资源
+  flutter_svg: ^2.2.0
+  # 旧页面暂时还在使用 Lucide，先保留依赖避免二级页报错。
   lucide_flutter: ^1.25.0
   # 相机插件（切片2：真实取景框 + 快门拍照；Web/Android 双端支持）
   camera: ^0.11.1
@@ -39,6 +40,10 @@ flutter:
   assets:
     - assets/seed/photos/
     - assets/seed/seed_manifest.json
+    # 品牌 Logo 资源。
+    - assets/brand/logo.svg
+    # 首页与主导航统一使用 MingCute SVG 图标资源
+    - assets/icons/mingcute/
   fonts:
     # 英文/数字：Poppins（几何无衬线，Ins 风格标配）
     - family: Poppins

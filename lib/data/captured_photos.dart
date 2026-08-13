@@ -25,5 +25,5 @@ class CapturedPhotosNotifier extends Notifier<List<CapturedPhoto>> {
 
 final capturedPhotosProvider =
     NotifierProvider<CapturedPhotosNotifier, List<CapturedPhoto>>(
-  CapturedPhotosNotifier.new,
-);
+      CapturedPhotosNotifier.new,
+    );

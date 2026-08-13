@@ -8,16 +8,16 @@ enum GrowthType { weight, vaccine, note }
 
 extension GrowthTypeX on GrowthType {
   String get key => switch (this) {
-        GrowthType.weight => 'weight',
-        GrowthType.vaccine => 'vaccine',
-        GrowthType.note => 'note',
-      };
+    GrowthType.weight => 'weight',
+    GrowthType.vaccine => 'vaccine',
+    GrowthType.note => 'note',
+  };
 
   static GrowthType fromKey(String k) => switch (k) {
-        'vaccine' => GrowthType.vaccine,
-        'note' => GrowthType.note,
-        _ => GrowthType.weight,
-      };
+    'vaccine' => GrowthType.vaccine,
+    'note' => GrowthType.note,
+    _ => GrowthType.weight,
+  };
 }
 
 /// 单条成长记录。统一用 JSON 字符串存 Hive（不写 TypeAdapter，降低复杂度）。
@@ -33,26 +33,28 @@ class GrowthRecord {
   final String id;
   final GrowthType type;
   final DateTime date;
+
   /// weight: 体重 kg 数值字符串；vaccine: 疫苗名称；note: 趣事标题
   final String value;
+
   /// 备注 / 趣事正文
   final String note;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'type': type.key,
-        'date': date.toIso8601String(),
-        'value': value,
-        'note': note,
-      };
+    'id': id,
+    'type': type.key,
+    'date': date.toIso8601String(),
+    'value': value,
+    'note': note,
+  };
 
   factory GrowthRecord.fromJson(Map<String, dynamic> j) => GrowthRecord(
-        id: j['id'] as String,
-        type: GrowthTypeX.fromKey(j['type'] as String),
-        date: DateTime.parse(j['date'] as String),
-        value: j['value'] as String,
-        note: (j['note'] as String?) ?? '',
-      );
+    id: j['id'] as String,
+    type: GrowthTypeX.fromKey(j['type'] as String),
+    date: DateTime.parse(j['date'] as String),
+    value: j['value'] as String,
+    note: (j['note'] as String?) ?? '',
+  );
 }
 
 /// 成长手记仓储：Hive box 持久化，按 petId 维度读写。
@@ -78,10 +80,7 @@ class GrowthRecordsRepository {
   /// 保存（倒序写入）。
   static void save(String petId, List<GrowthRecord> records) {
     final sorted = [...records]..sort((a, b) => b.date.compareTo(a.date));
-    _box.put(
-      'g_$petId',
-      jsonEncode(sorted.map((e) => e.toJson()).toList()),
-    );
+    _box.put('g_$petId', jsonEncode(sorted.map((e) => e.toJson()).toList()));
   }
 
   /// 预置示例数据（仅当 Hive 无记录时返回，不落盘；用户首次添加即被真实数据覆盖）。
@@ -113,9 +112,7 @@ class GrowthRecordsRepository {
           mk(28, GrowthType.note, '拆家小能手', '咬坏了一根数据线'),
         ];
       case 'friends':
-        return [
-          mk(20, GrowthType.note, '猫友聚会', '小区三只猫一起晒太阳'),
-        ];
+        return [mk(20, GrowthType.note, '猫友聚会', '小区三只猫一起晒太阳')];
       default:
         return [
           mk(15, GrowthType.weight, '3.5'),
@@ -126,8 +123,7 @@ class GrowthRecordsRepository {
 }
 
 /// 只读：按宠物读取成长记录（FutureProvider.family 自动缓存，写后 invalidate 刷新）。
-final growthRecordsProvider =
-    FutureProvider.family<List<GrowthRecord>, String>(
+final growthRecordsProvider = FutureProvider.family<List<GrowthRecord>, String>(
   (ref, petId) => GrowthRecordsRepository.get(petId),
 );
 
@@ -146,8 +142,9 @@ class _GrowthMutation {
   }
 
   void remove(String petId, String id) {
-    final next =
-        GrowthRecordsRepository.get(petId).where((e) => e.id != id).toList();
+    final next = GrowthRecordsRepository.get(
+      petId,
+    ).where((e) => e.id != id).toList();
     GrowthRecordsRepository.save(petId, next);
     _ref.invalidate(growthRecordsProvider(petId));
   }

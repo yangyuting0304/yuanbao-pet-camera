@@ -23,14 +23,14 @@ class Pet {
   });
 
   factory Pet.fromJson(Map<String, dynamic> j) => Pet(
-        id: j['id'] as String,
-        name: j['name'] as String,
-        species: j['species'] as String,
-        breed: j['breed'] as String,
-        birthday: j['birthday'] as String,
-        avatarFileName: j['avatarFileName'] as String,
-        bio: j['bio'] as String,
-      );
+    id: j['id'] as String,
+    name: j['name'] as String,
+    species: j['species'] as String,
+    breed: j['breed'] as String,
+    birthday: j['birthday'] as String,
+    avatarFileName: j['avatarFileName'] as String,
+    bio: j['bio'] as String,
+  );
 
   String get avatarPath => 'assets/seed/photos/$avatarFileName';
 
@@ -54,7 +54,10 @@ class Pet {
     var years = now.year - b.year;
     var months = now.month - b.month;
     if (now.day < b.day) months--;
-    if (months < 0) { years--; months += 12; }
+    if (months < 0) {
+      years--;
+      months += 12;
+    }
     if (years > 0 && months > 0) return '$years岁${months}个月';
     if (years > 0) return '$years岁';
     return '$months个月';
@@ -66,17 +69,13 @@ class Album {
   final String petId;
   final String title;
 
-  const Album({
-    required this.id,
-    required this.petId,
-    required this.title,
-  });
+  const Album({required this.id, required this.petId, required this.title});
 
   factory Album.fromJson(Map<String, dynamic> j) => Album(
-        id: j['id'] as String,
-        petId: j['petId'] as String,
-        title: j['title'] as String,
-      );
+    id: j['id'] as String,
+    petId: j['petId'] as String,
+    title: j['title'] as String,
+  );
 }
 
 class Photo {
@@ -97,17 +96,16 @@ class Photo {
   });
 
   factory Photo.fromJson(Map<String, dynamic> j) => Photo(
-        id: j['id'] as String,
-        petId: j['petId'] as String,
-        albumId: j['albumId'] as String,
-        fileName: j['fileName'] as String,
-        capturedAt: DateTime.parse(j['capturedAt'] as String),
-        source: j['source'] as String,
-      );
+    id: j['id'] as String,
+    petId: j['petId'] as String,
+    albumId: j['albumId'] as String,
+    fileName: j['fileName'] as String,
+    capturedAt: DateTime.parse(j['capturedAt'] as String),
+    source: j['source'] as String,
+  );
 
   String get assetPath => 'assets/seed/photos/$fileName';
 
   /// 时间视图分组键：YYYY年M月
-  String get monthKey =>
-      '${capturedAt.year}年${capturedAt.month}月';
+  String get monthKey => '${capturedAt.year}年${capturedAt.month}月';
 }

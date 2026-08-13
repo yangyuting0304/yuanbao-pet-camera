@@ -6,10 +6,7 @@ import 'package:http/http.dart' as http;
 
 /// FireRed 图像编辑结果（毛孩 AI 创意编辑 / 换装 / 风格化）。
 class FireRedResult {
-  const FireRedResult({
-    required this.imageBytes,
-    this.demo = false,
-  });
+  const FireRedResult({required this.imageBytes, this.demo = false});
   final Uint8List imageBytes;
   final bool demo; // 未接入代理时为真（回显源图）
 }
@@ -33,8 +30,10 @@ class FireRedException implements Exception {
 /// 未配置时进入「演示模式」回显源图，便于在 Web 端跑通完整交互流。
 class FireRedService {
   // Web / 云部署：服务端代理地址（编译期 --dart-define 注入，禁止硬编码）。
-  static const String _proxyUrl =
-      String.fromEnvironment('FIERED_PROXY_URL', defaultValue: '');
+  static const String _proxyUrl = String.fromEnvironment(
+    'FIERED_PROXY_URL',
+    defaultValue: '',
+  );
 
   /// 提交一次图像编辑（图生图）。
   Future<FireRedResult> edit({
@@ -77,26 +76,26 @@ final fireRedServiceProvider = Provider<FireRedService>(
 const List<(String label, String prompt)> kFireRedPresets = <(String, String)>[
   (
     '戴蝴蝶结',
-    'Add a cute pink bow on the cat\'s head, keep the same pose and background, keep the cat looking natural.'
+    'Add a cute pink bow on the cat\'s head, keep the same pose and background, keep the cat looking natural.',
   ),
   (
     '变成蓝猫',
-    'Turn the cat into a blue-furred cat, keep the same pose, expression and background.'
+    'Turn the cat into a blue-furred cat, keep the same pose, expression and background.',
   ),
   (
     '星空背景',
-    'Place the cat on a starry night sky background with glowing stars and a dreamy galaxy, keep the cat unchanged.'
+    'Place the cat on a starry night sky background with glowing stars and a dreamy galaxy, keep the cat unchanged.',
   ),
   (
     '卡通动漫风',
-    'Restyle the cat photo into a cute anime / manga style with clean cel-shading and big sparkling eyes.'
+    'Restyle the cat photo into a cute anime / manga style with clean cel-shading and big sparkling eyes.',
   ),
   (
     '戴墨镜',
-    'Put cool black sunglasses on the cat, keep the same pose and background.'
+    'Put cool black sunglasses on the cat, keep the same pose and background.',
   ),
   (
     '生日帽',
-    'Put a colorful party birthday hat on the cat\'s head, add a festive mood, keep the cat unchanged.'
+    'Put a colorful party birthday hat on the cat\'s head, add a festive mood, keep the cat unchanged.',
   ),
 ];

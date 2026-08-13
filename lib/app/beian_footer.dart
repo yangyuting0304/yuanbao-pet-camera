@@ -32,14 +32,17 @@ class BeianFooter extends StatelessWidget {
           children: <Widget>[
             Text(
               '© 2026 杨玉婷作品集',
-              style: TextStyle(fontSize: 12, color: tokens.textSecondary),
+              style: TextStyle(
+                fontSize: AppUi.fontCaption,
+                color: tokens.textSecondary,
+              ),
             ),
             InkWell(
               onTap: () => launchUrl(Uri.parse(beianUrl)),
               child: Text(
                 beianNumber,
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: AppUi.fontCaption,
                   color: tokens.brand,
                   decoration: TextDecoration.underline,
                 ),

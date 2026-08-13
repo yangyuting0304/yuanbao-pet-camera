@@ -46,5 +46,5 @@ class ShortVideosNotifier extends Notifier<List<ShortVideoEdit>> {
 
 final shortVideosProvider =
     NotifierProvider<ShortVideosNotifier, List<ShortVideoEdit>>(
-  ShortVideosNotifier.new,
-);
+      ShortVideosNotifier.new,
+    );

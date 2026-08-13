@@ -101,13 +101,17 @@ class AiPortraitException implements Exception {
 /// 再在 input.image_url 中引用（DashScope 不支持直接传图字节）。
 class AiPortraitService {
   // 安全读取：编译期 --dart-define 注入，禁止硬编码到源码。
-  static const String _apiKey =
-      String.fromEnvironment('DASHSCOPE_API_KEY', defaultValue: '');
+  static const String _apiKey = String.fromEnvironment(
+    'DASHSCOPE_API_KEY',
+    defaultValue: '',
+  );
 
   // Web 部署走云函数代理（避免 key 进客户端 + 绕过 CORS）。
   // 构建时：--dart-define=AI_PROXY_URL=https://<你的云函数URL>
-  static const String _proxyUrl =
-      String.fromEnvironment('AI_PROXY_URL', defaultValue: '');
+  static const String _proxyUrl = String.fromEnvironment(
+    'AI_PROXY_URL',
+    defaultValue: '',
+  );
 
   static const String _endpoint =
       'https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis';
@@ -180,10 +184,7 @@ class AiPortraitService {
       body: jsonEncode(<String, Object>{
         'model': 'wanx2.1-t2i-image-synthesis',
         'input': <String, String>{'prompt': style.prompt},
-        'parameters': <String, Object>{
-          'size': '1024*1024',
-          'n': 1,
-        },
+        'parameters': <String, Object>{'size': '1024*1024', 'n': 1},
       }),
     );
     if (resp.statusCode != 200) {
@@ -195,7 +196,9 @@ class AiPortraitService {
 
   /// 轮询任务状态，成功后返回结果图 URL。
   Future<String> _pollTask(String taskId) async {
-    final uri = Uri.parse('https://dashscope.aliyuncs.com/api/v1/tasks/$taskId');
+    final uri = Uri.parse(
+      'https://dashscope.aliyuncs.com/api/v1/tasks/$taskId',
+    );
     const maxAttempts = 30;
     for (var i = 0; i < maxAttempts; i++) {
       await Future<void>.delayed(const Duration(seconds: 2));

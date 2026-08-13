@@ -1,5 +1,6 @@
 import 'dart:async';
-import 'dart:html' as html; // Web 端用 blob URL 播放用户选取的视频/音频（仅 Web 演示端，Android 端接入时需改文件源）
+import 'dart:html'
+    as html; // Web 端用 blob URL 播放用户选取的视频/音频（仅 Web 演示端，Android 端接入时需改文件源）
 import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
@@ -7,9 +8,52 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_flutter/lucide_flutter.dart';
+import 'package:pet_camera/app/app_back_button.dart';
+import 'package:pet_camera/app/app_primary_action_button.dart';
+import 'package:pet_camera/app/app_segmented_toggle.dart';
+import 'package:pet_camera/app/mingcute_icons.dart';
 import 'package:pet_camera/app/tokens.dart';
 import 'package:pet_camera/data/short_videos.dart';
 import 'package:video_player/video_player.dart';
+
+const _fieldBorderColor = Color(0xFFE2E4E6);
+
+/// 裁剪滑块按钮。
+/// 按用户给的 CSS 固定为 24x24、黄色填充、4px 黑色描边。
+class _TrimRangeThumbShape extends RangeSliderThumbShape {
+  const _TrimRangeThumbShape();
+
+  static const double _outerRadius = 12;
+  static const double _innerRadius = 8;
+
+  @override
+  Size getPreferredSize(bool isEnabled, bool isDiscrete) {
+    return const Size.square(_outerRadius * 2);
+  }
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset center, {
+    required Animation<double> activationAnimation,
+    required Animation<double> enableAnimation,
+    bool isDiscrete = false,
+    bool isEnabled = false,
+    bool isOnTop = false,
+    TextDirection textDirection = TextDirection.ltr,
+    required SliderThemeData sliderTheme,
+    Thumb thumb = Thumb.start,
+    bool isPressed = false,
+  }) {
+    final canvas = context.canvas;
+    final outerPaint = Paint()..color = Colors.black;
+    final innerPaint = Paint()..color = const Color(0xFFFFF032);
+
+    // 先画黑色外圆，再画黄色内圆，得到 4px 描边效果。
+    canvas.drawCircle(center, _outerRadius, outerPaint);
+    canvas.drawCircle(center, _innerRadius, innerPaint);
+  }
+}
 
 /// 字幕样式（内容层，用户可选）：白字黑描边 / 黄字 / 粉字 / 黑字白描边。
 class _CaptionStyle {
@@ -21,10 +65,20 @@ class _CaptionStyle {
 }
 
 const _captionStyles = <_CaptionStyle>[
-  _CaptionStyle('白字描边', Color(0xFFFFFFFF), Color(0xFF000000), 22),
-  _CaptionStyle('黄字', Color(0xFFFFE14D), Color(0xFF5A4A00), 22),
-  _CaptionStyle('粉字', Color(0xFFFF9EC4), Color(0xFF7A2E4A), 22),
-  _CaptionStyle('黑字白描边', Color(0xFF2B2622), Color(0xFFFFFFFF), 22),
+  _CaptionStyle(
+    '白字描边',
+    Color(0xFFFFFFFF),
+    Color(0xFF000000),
+    AppUi.fontHeadline,
+  ),
+  _CaptionStyle('黄字', Color(0xFFFFE14D), Color(0xFF5A4A00), AppUi.fontHeadline),
+  _CaptionStyle('粉字', Color(0xFFFF9EC4), Color(0xFF7A2E4A), AppUi.fontHeadline),
+  _CaptionStyle(
+    '黑字白描边',
+    Color(0xFF2B2622),
+    Color(0xFFFFFFFF),
+    AppUi.fontHeadline,
+  ),
 ];
 
 /// 短片剪辑页：选视频 → 裁剪 → 加字幕 → 加配乐 → 存入短片库。
@@ -146,7 +200,8 @@ class _ShortVideoPageState extends ConsumerState<ShortVideoPage> {
     final c = _controller;
     if (c == null || !c.value.isInitialized) return;
     // 裁剪段结束自动暂停
-    if (_playing && c.value.position >= Duration(milliseconds: _trimEnd.round())) {
+    if (_playing &&
+        c.value.position >= Duration(milliseconds: _trimEnd.round())) {
       _pause();
     }
     if (mounted) setState(() {});
@@ -187,39 +242,88 @@ class _ShortVideoPageState extends ConsumerState<ShortVideoPage> {
 
   void _save() {
     if (_videoBytes == null || !_ready) return;
-    ref.read(shortVideosProvider.notifier).add(ShortVideoEdit(
-          videoBytes: _videoBytes!,
-          musicBytes: _musicBytes,
-          trimStartMs: _trimStart.round(),
-          trimEndMs: _trimEnd.round(),
-          caption: _captionCtrl.text.trim(),
-          captionStyle: _captionStyle,
-          muteOriginal: _muteOriginal,
-        ));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已存入短片库')),
-    );
+    ref
+        .read(shortVideosProvider.notifier)
+        .add(
+          ShortVideoEdit(
+            videoBytes: _videoBytes!,
+            musicBytes: _musicBytes,
+            trimStartMs: _trimStart.round(),
+            trimEndMs: _trimEnd.round(),
+            caption: _captionCtrl.text.trim(),
+            captionStyle: _captionStyle,
+            muteOriginal: _muteOriginal,
+          ),
+        );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('已存入短片库')));
   }
 
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
-    final shorts = ref.watch(shortVideosProvider);
     return Scaffold(
-      backgroundColor: t.bgBase,
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        leading: IconButton(
-          icon: Icon(LucideIcons.chevronLeft, color: t.textPrimary),
-          onPressed: () => Navigator.pop(context),
+        toolbarHeight: 44,
+        leading: AppBackButton(onTap: () => Navigator.pop(context)),
+        centerTitle: true,
+        title: Text(
+          '短片剪辑',
+          style: TextStyle(
+            fontSize: AppUi.fontTitle,
+            height: AppUi.lineHeight(AppUi.fontTitle),
+            fontWeight: FontWeight.w700,
+            color: t.textPrimary,
+          ),
         ),
-        title: Text('短片剪辑',
-            style: TextStyle(fontWeight: FontWeight.w700, color: t.textPrimary)),
         backgroundColor: t.surface,
         foregroundColor: t.textPrimary,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
         elevation: 0,
+        scrolledUnderElevation: 0,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const ShortVideoLibraryPage(),
+                  ),
+                );
+              },
+              child: const SizedBox(
+                width: 32,
+                height: 32,
+                child: Center(
+                  child: MingCuteIcon(
+                    MingCuteIcons.film,
+                    size: AppUi.iconMedium,
+                    color: Colors.black,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
+      bottomNavigationBar: _ready
+          ? AppPrimaryActionIconBottomBar(
+              label: '保存到短片库',
+              iconWidget: const MingCuteIcon(
+                MingCuteIcons.film,
+                size: AppUi.iconSmall,
+                color: Colors.black,
+              ),
+              onPressed: _save,
+            )
+          : null,
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(16, 24, 16, _ready ? 120 : 16),
         children: [
           _VideoStage(
             controller: _controller,
@@ -231,20 +335,20 @@ class _ShortVideoPageState extends ConsumerState<ShortVideoPage> {
             onPick: _pickVideo,
           ),
           if (_ready) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 24),
             _TrimBar(
               durationMs: _durationMs,
               start: _trimStart,
               end: _trimEnd,
               onChanged: _onTrimChanged,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
             _CaptionRow(
               controller: _captionCtrl,
               style: _captionStyle,
               onStyle: (i) => setState(() => _captionStyle = i),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
             _MusicRow(
               musicName: _musicName,
               onPick: _pickMusic,
@@ -254,40 +358,87 @@ class _ShortVideoPageState extends ConsumerState<ShortVideoPage> {
                 _controller?.setVolume(v ? 0 : 1);
               },
             ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: FilledButton.icon(
-                onPressed: _save,
-                icon: const Icon(LucideIcons.save),
-                label: const Text('保存到短片库',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                style: FilledButton.styleFrom(
-                  backgroundColor: t.brand,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(25)),
-                  elevation: 0,
-                ),
-              ),
-            ),
           ] else if (_error != null) ...[
             const SizedBox(height: 12),
-            Text(_error!,
-                style: TextStyle(color: t.error, fontSize: 13)),
+            Text(
+              _error!,
+              style: TextStyle(color: t.error, fontSize: AppUi.fontBody),
+            ),
           ],
-          const SizedBox(height: 28),
-          _LibrarySection(onPlay: _openPlayback),
         ],
       ),
     );
   }
+}
 
-  void _openPlayback(ShortVideoEdit edit) {
+/// 我的短片页：独立展示已保存的短片列表。
+class ShortVideoLibraryPage extends ConsumerWidget {
+  const ShortVideoLibraryPage({super.key});
+
+  void _openPlayback(BuildContext context, ShortVideoEdit edit) {
     showDialog(
       context: context,
       builder: (_) => _PlaybackDialog(edit: edit),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = context.tokens;
+    final shorts = ref.watch(shortVideosProvider);
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        toolbarHeight: 44,
+        leading: AppBackButton(onTap: () => Navigator.pop(context)),
+        centerTitle: true,
+        title: Text(
+          '我的短片',
+          style: TextStyle(
+            fontSize: AppUi.fontTitle,
+            height: AppUi.lineHeight(AppUi.fontTitle),
+            fontWeight: FontWeight.w700,
+            color: t.textPrimary,
+          ),
+        ),
+        backgroundColor: t.surface,
+        foregroundColor: t.textPrimary,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+      ),
+      body: shorts.isEmpty
+          ? Center(
+              // 空状态在页面可视区域内上下左右居中显示。
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    LucideIcons.clapperboard,
+                    size: 48,
+                    color: t.textSecondary.withValues(alpha: 0.5),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '剪辑好的短片会显示在这里',
+                    style: TextStyle(
+                      fontSize: AppUi.fontBody,
+                      color: t.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+              children: [
+                _LibrarySection(
+                  showHeader: false,
+                  onPlay: (edit) => _openPlayback(context, edit),
+                ),
+              ],
+            ),
     );
   }
 }
@@ -314,19 +465,27 @@ class _VideoStage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = _captionStyles[captionStyle];
+    final hasVideo =
+        ready && controller != null && controller!.value.isInitialized;
     return AspectRatio(
-      aspectRatio: 9 / 16,
+      // 无论是否已选择视频，预览区域都保持正方形。
+      aspectRatio: 1,
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.circular(16),
+          color: hasVideo ? Colors.black : const Color(0xFFF6F8FA),
+          borderRadius: BorderRadius.circular(AppUi.radiusCard),
         ),
         clipBehavior: Clip.antiAlias,
-        child: ready && controller != null && controller!.value.isInitialized
+        child: hasVideo
             ? Stack(
                 fit: StackFit.expand,
                 children: [
-                  Center(child: VideoPlayer(controller!)),
+                  Center(
+                    child: AspectRatio(
+                      aspectRatio: controller!.value.aspectRatio,
+                      child: VideoPlayer(controller!),
+                    ),
+                  ),
                   if (caption.isNotEmpty)
                     Positioned(
                       left: 16,
@@ -337,7 +496,7 @@ class _VideoStage extends StatelessWidget {
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: style.size,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w700,
                           color: style.color,
                           shadows: [
                             Shadow(
@@ -367,7 +526,7 @@ class _VideoStage extends StatelessWidget {
                         child: Icon(
                           playing ? LucideIcons.pause : LucideIcons.play,
                           color: Colors.white,
-                          size: 30,
+                          size: AppUi.iconLarge,
                         ),
                       ),
                     ),
@@ -379,10 +538,21 @@ class _VideoStage extends StatelessWidget {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(LucideIcons.film, size: 44, color: Colors.white70),
-                    const SizedBox(height: 12),
-                    const Text('点击选择一段宠物视频',
-                        style: TextStyle(color: Colors.white70, fontSize: 14)),
+                    Icon(
+                      LucideIcons.clapperboard,
+                      size: 28,
+                      color: context.tokens.textSecondary,
+                    ),
+                    const SizedBox(height: AppUi.space8),
+                    Text(
+                      '请先选择视频',
+                      style: TextStyle(
+                        fontSize: AppUi.fontBody,
+                        height: AppUi.lineHeight(AppUi.fontBody),
+                        fontWeight: FontWeight.w400,
+                        color: context.tokens.textSecondary,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -416,25 +586,81 @@ class _TrimBar extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('裁剪片段',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: t.textPrimary)),
-        const SizedBox(height: 8),
-        RangeSlider(
-          min: 0,
-          max: durationMs.toDouble(),
-          values: RangeValues(start, end),
-          divisions: (durationMs / 200).round().clamp(1, 2000),
-          activeColor: t.brand,
-          inactiveColor: t.brandSoft,
-          onChanged: onChanged,
+        Text(
+          '剪辑短片',
+          style: TextStyle(
+            fontSize: AppUi.fontHeadline,
+            height: 28 / AppUi.fontHeadline,
+            fontWeight: FontWeight.w400,
+            color: t.textPrimary,
+          ),
         ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('起 ${_fmt(start)}', style: TextStyle(fontSize: 12, color: t.textSecondary)),
-            Text('止 ${_fmt(end)} · 共 ${_fmt(end - start)}',
-                style: TextStyle(fontSize: 12, color: t.textSecondary)),
-          ],
+        const SizedBox(height: 12),
+        Container(
+          // 去掉按钮按压扩散层后，容器上下留白收紧一点，视觉上更贴合内容高度。
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF6F8FA),
+            borderRadius: BorderRadius.circular(AppUi.radiusCard),
+          ),
+          child: Column(
+            children: [
+              SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  // 裁剪滑块改为纯黑色轨道与按钮，避免和主色按钮混淆。
+                  activeTrackColor: Colors.black,
+                  inactiveTrackColor: const Color(0xFFE6E6E6),
+                  thumbColor: Colors.black,
+                  // 去掉按住拖动按钮时的半透明黑色扩散层。
+                  overlayColor: Colors.transparent,
+                  rangeTrackShape: const RoundedRectRangeSliderTrackShape(),
+                  trackHeight: 4,
+                  rangeThumbShape: const _TrimRangeThumbShape(),
+                ),
+                child: RangeSlider(
+                  min: 0,
+                  max: durationMs.toDouble(),
+                  values: RangeValues(start, end),
+                  divisions: (durationMs / 200).round().clamp(1, 2000),
+                  onChanged: onChanged,
+                ),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '起 ${_fmt(start)}',
+                      style: TextStyle(
+                        fontSize: AppUi.fontCaption,
+                        color: t.textSecondary,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        '共 ${((end - start) / 1000).ceil()} 秒',
+                        style: TextStyle(
+                          fontSize: AppUi.fontCaption,
+                          color: t.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      '止 ${_fmt(end)}',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontSize: AppUi.fontCaption,
+                        color: t.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -458,48 +684,89 @@ class _CaptionRow extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('加字幕',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: t.textPrimary)),
-        const SizedBox(height: 8),
-        TextField(
-          controller: controller,
-          decoration: InputDecoration(
-            hintText: '例如：今天也是可爱的一天',
-            fillColor: t.surface,
-            filled: true,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        Text(
+          '加字幕',
+          style: TextStyle(
+            fontSize: AppUi.fontHeadline,
+            height: 28 / AppUi.fontHeadline,
+            fontWeight: FontWeight.w400,
+            color: t.textPrimary,
           ),
         ),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          children: [
-            for (int i = 0; i < _captionStyles.length; i++)
-              GestureDetector(
-                onTap: () => onStyle(i),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: i == style ? t.brand : t.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: i == style ? t.brand : t.brandSoft,
-                      width: 1,
+        const SizedBox(height: 12),
+        TextField(
+          controller: controller,
+          minLines: 2,
+          maxLines: 2,
+          style: TextStyle(
+            fontSize: AppUi.fontBody,
+            height: AppUi.lineHeight(AppUi.fontBody),
+            color: t.textPrimary,
+          ),
+          decoration: InputDecoration(
+            hintText: '例如：今天也是可爱的一天',
+            hintStyle: TextStyle(
+              fontSize: AppUi.fontBody,
+              height: AppUi.lineHeight(AppUi.fontBody),
+              color: t.textSecondary,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppUi.radiusCard),
+              borderSide: const BorderSide(color: _fieldBorderColor),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppUi.radiusCard),
+              borderSide: const BorderSide(color: _fieldBorderColor),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppUi.radiusCard),
+              borderSide: const BorderSide(color: _fieldBorderColor),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 12,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: _captionStyles.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            mainAxisExtent: 36,
+          ),
+          itemBuilder: (context, index) {
+            final selected = index == style;
+            return GestureDetector(
+              onTap: () => onStyle(index),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(AppUi.radiusCard),
+                  border: Border.all(
+                    color: selected ? t.brand : _fieldBorderColor,
+                    width: 1,
+                  ),
+                ),
+                child: Center(
+                  child: Text(
+                    _captionStyles[index].label,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: AppUi.fontCaption,
+                      height: 20 / AppUi.fontCaption,
+                      fontWeight: FontWeight.w400,
+                      color: t.textPrimary,
                     ),
                   ),
-                  child: Text(_captionStyles[i].label,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: i == style ? Colors.white : t.textPrimary,
-                      )),
                 ),
               ),
-          ],
+            );
+          },
         ),
       ],
     );
@@ -525,49 +792,59 @@ class _MusicRow extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('配乐',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: t.textPrimary)),
-        const SizedBox(height: 8),
         Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Expanded(
-              child: GestureDetector(
-                onTap: onPick,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: t.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: t.brandSoft),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(LucideIcons.music, size: 18, color: t.brand),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          musicName ?? '选择一段配乐',
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 13, color: t.textPrimary),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+            Text(
+              '配乐',
+              style: TextStyle(
+                fontSize: AppUi.fontHeadline,
+                height: 28 / AppUi.fontHeadline,
+                fontWeight: FontWeight.w400,
+                color: t.textPrimary,
               ),
             ),
-            const SizedBox(width: 12),
-            Row(
+            AppSegmentedToggle(
+              leftLabel: '保留原声',
+              rightLabel: '关闭原声',
+              rightSelected: muteOriginal,
+              onSelectLeft: () => onMute(false),
+              onSelectRight: () => onMute(true),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        GestureDetector(
+          onTap: onPick,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(AppUi.radiusCard),
+              border: Border.all(color: _fieldBorderColor),
+            ),
+            child: Row(
               children: [
-                Icon(LucideIcons.volumeX, size: 16, color: t.textSecondary),
-                Switch(
-                  value: muteOriginal,
-                  activeColor: t.brand,
-                  onChanged: onMute,
+                const Icon(
+                  LucideIcons.music,
+                  size: AppUi.iconMedium,
+                  color: Colors.black,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    musicName ?? '选择一段音乐',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: AppUi.fontBody,
+                      color: t.textPrimary,
+                    ),
+                  ),
                 ),
               ],
             ),
-          ],
+          ),
         ),
       ],
     );
@@ -576,8 +853,9 @@ class _MusicRow extends StatelessWidget {
 
 /// 短片库：网格展示已保存剪辑，点击播放。
 class _LibrarySection extends ConsumerWidget {
-  const _LibrarySection({required this.onPlay});
+  const _LibrarySection({required this.onPlay, this.showHeader = true});
   final void Function(ShortVideoEdit) onPlay;
+  final bool showHeader;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -586,31 +864,54 @@ class _LibrarySection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Icon(LucideIcons.library, size: 18, color: t.brand),
-            const SizedBox(width: 8),
-            Text('我的短片',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: t.textPrimary)),
-            const SizedBox(width: 6),
-            Text('${shorts.length}', style: TextStyle(fontSize: 13, color: t.textSecondary)),
-          ],
-        ),
-        const SizedBox(height: 12),
+        if (showHeader) ...[
+          Row(
+            children: [
+              Icon(LucideIcons.library, size: AppUi.iconMedium, color: t.brand),
+              const SizedBox(width: 8),
+              Text(
+                '我的短片',
+                style: TextStyle(
+                  fontSize: AppUi.fontTitle,
+                  fontWeight: FontWeight.w700,
+                  color: t.textPrimary,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${shorts.length}',
+                style: TextStyle(
+                  fontSize: AppUi.fontBody,
+                  color: t.textSecondary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+        ],
         if (shorts.isEmpty)
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 28),
             decoration: BoxDecoration(
               color: t.surface,
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(AppUi.radiusCard),
             ),
             child: Column(
               children: [
-                Icon(LucideIcons.clapperboard, size: 32, color: t.textSecondary.withValues(alpha: 0.5)),
+                Icon(
+                  LucideIcons.clapperboard,
+                  size: AppUi.iconLarge,
+                  color: t.textSecondary.withValues(alpha: 0.5),
+                ),
                 const SizedBox(height: 8),
-                Text('剪辑好的短片会显示在这里',
-                    style: TextStyle(fontSize: 13, color: t.textSecondary)),
+                Text(
+                  '剪辑好的短片会显示在这里',
+                  style: TextStyle(
+                    fontSize: AppUi.fontBody,
+                    color: t.textSecondary,
+                  ),
+                ),
               ],
             ),
           )
@@ -630,50 +931,60 @@ class _LibrarySection extends ConsumerWidget {
               final secs = (s.durationMs / 1000).ceil();
               return GestureDetector(
                 onTap: () => onPlay(s),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: t.surface,
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [
-                      BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2)),
-                    ],
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Column(
-                    children: [
-                      Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(AppUi.radiusCard),
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
                             Container(color: Colors.black),
                             const Center(
-                              child: Icon(LucideIcons.playCircle, size: 40, color: Colors.white70),
+                              child: Icon(
+                                LucideIcons.playCircle,
+                                size: AppUi.iconLarge,
+                                color: Colors.white70,
+                              ),
                             ),
                             Positioned(
                               right: 8,
                               bottom: 8,
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.black.withValues(alpha: 0.6),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
-                                child: Text('${secs}s',
-                                    style: const TextStyle(fontSize: 11, color: Colors.white)),
+                                child: Text(
+                                  '${secs}s',
+                                  style: const TextStyle(
+                                    fontSize: AppUi.fontCaption,
+                                    color: Colors.white,
+                                  ),
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
-                      Padding(
-                        padding: const EdgeInsets.all(10),
-                        child: Text(s.label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: t.textPrimary)),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      s.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: AppUi.fontTitle,
+                        fontWeight: FontWeight.w400,
+                        color: t.textPrimary,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               );
             },
@@ -699,6 +1010,7 @@ class _PlaybackDialogState extends State<_PlaybackDialog> {
     _audio ??= AudioPlayer();
     return _audio!;
   }
+
   bool _playing = false;
   bool _ready = false;
   int _durationMs = 0;
@@ -708,8 +1020,9 @@ class _PlaybackDialogState extends State<_PlaybackDialog> {
   // 录制产生的视频 trimEndMs=0（未知时长），视为「整段」；
   // 仅当 trimEndMs 明确大于 start 时才作为裁剪终点。
   int get _effectiveStart => widget.edit.trimStartMs;
-  int get _effectiveEnd =>
-      widget.edit.trimEndMs > widget.edit.trimStartMs ? widget.edit.trimEndMs : _durationMs;
+  int get _effectiveEnd => widget.edit.trimEndMs > widget.edit.trimStartMs
+      ? widget.edit.trimEndMs
+      : _durationMs;
 
   @override
   void initState() {
@@ -719,9 +1032,13 @@ class _PlaybackDialogState extends State<_PlaybackDialog> {
 
   Future<void> _init() async {
     final e = widget.edit;
-    _videoUrl = html.Url.createObjectUrlFromBlob(html.Blob(<Object>[e.videoBytes], e.mimeType));
+    _videoUrl = html.Url.createObjectUrlFromBlob(
+      html.Blob(<Object>[e.videoBytes], e.mimeType),
+    );
     if (e.musicBytes != null) {
-      _musicUrl = html.Url.createObjectUrlFromBlob(html.Blob(<Object>[e.musicBytes!], 'audio/mpeg'));
+      _musicUrl = html.Url.createObjectUrlFromBlob(
+        html.Blob(<Object>[e.musicBytes!], 'audio/mpeg'),
+      );
     }
     final c = VideoPlayerController.networkUrl(Uri.parse(_videoUrl!));
     _c = c;
@@ -768,8 +1085,10 @@ class _PlaybackDialogState extends State<_PlaybackDialog> {
   void dispose() {
     _c?.dispose();
     _audio?.dispose();
-    if (_videoUrl != null && _videoUrl!.startsWith('blob:')) html.Url.revokeObjectUrl(_videoUrl!);
-    if (_musicUrl != null && _musicUrl!.startsWith('blob:')) html.Url.revokeObjectUrl(_musicUrl!);
+    if (_videoUrl != null && _videoUrl!.startsWith('blob:'))
+      html.Url.revokeObjectUrl(_videoUrl!);
+    if (_musicUrl != null && _musicUrl!.startsWith('blob:'))
+      html.Url.revokeObjectUrl(_musicUrl!);
     super.dispose();
   }
 
@@ -780,11 +1099,13 @@ class _PlaybackDialogState extends State<_PlaybackDialog> {
     final caption = widget.edit.caption;
     return Dialog(
       backgroundColor: t.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppUi.radiusCard),
+      ),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 360),
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(12),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -793,7 +1114,7 @@ class _PlaybackDialogState extends State<_PlaybackDialog> {
                 child: Container(
                   decoration: BoxDecoration(
                     color: Colors.black,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(AppUi.radiusCard),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: _ready && _c != null && _c!.value.isInitialized
@@ -811,11 +1132,19 @@ class _PlaybackDialogState extends State<_PlaybackDialog> {
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     fontSize: style.size,
-                                    fontWeight: FontWeight.w800,
+                                    fontWeight: FontWeight.w700,
                                     color: style.color,
                                     shadows: [
-                                      Shadow(color: style.stroke, offset: const Offset(1.5, 1.5), blurRadius: 2),
-                                      Shadow(color: style.stroke, offset: const Offset(-1.5, -1.5), blurRadius: 2),
+                                      Shadow(
+                                        color: style.stroke,
+                                        offset: const Offset(1.5, 1.5),
+                                        blurRadius: 2,
+                                      ),
+                                      Shadow(
+                                        color: style.stroke,
+                                        offset: const Offset(-1.5, -1.5),
+                                        blurRadius: 2,
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -831,9 +1160,11 @@ class _PlaybackDialogState extends State<_PlaybackDialog> {
                                     shape: BoxShape.circle,
                                   ),
                                   child: Icon(
-                                    _playing ? LucideIcons.pause : LucideIcons.play,
+                                    _playing
+                                        ? LucideIcons.pause
+                                        : LucideIcons.play,
                                     color: Colors.white,
-                                    size: 28,
+                                    size: AppUi.iconLarge,
                                   ),
                                 ),
                               ),
@@ -850,8 +1181,10 @@ class _PlaybackDialogState extends State<_PlaybackDialog> {
                   onPressed: () => Navigator.pop(context),
                   style: FilledButton.styleFrom(
                     backgroundColor: t.brand,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    foregroundColor: t.textPrimary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
                   ),
                   child: const Text('关闭'),
                 ),

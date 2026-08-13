@@ -39,7 +39,9 @@ class SeedRepository {
   }
 }
 
-final seedRepositoryProvider = Provider<SeedRepository>((ref) => SeedRepository.instance);
+final seedRepositoryProvider = Provider<SeedRepository>(
+  (ref) => SeedRepository.instance,
+);
 
 final petsProvider = FutureProvider<List<Pet>>(
   (ref) => ref.watch(seedRepositoryProvider).getPets(),

@@ -1,9 +1,6 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <!-- 强制 HTML 渲染器：跳过 3-4MB 的 CanvasKit wasm 下载，iOS/弱网加载快一倍 -->
-  <script>window.flutterWebRenderer = "html";</script>
-
   <!--
     If you are serving your web app in a path other than the root, change the
     href value below to reflect the base path you are serving from.
@@ -36,17 +33,19 @@
   <link rel="manifest" href="manifest.json">
 
   <style>
-    /* 纯 CSS 加载提示（Flutter 渲染后会被其 view 覆盖，不干扰任何 JS 流程） */
-    html, body { margin: 0; padding: 0; height: 100%; background: #F5F0FF; }
+    /* 启动加载页：在 Flutter 首帧前展示，首帧后由脚本移除。 */
+    html, body { margin: 0; padding: 0; height: 100%; background: #FFFFFF; }
     #app-loading {
       position: fixed; inset: 0; display: flex; flex-direction: column;
       align-items: center; justify-content: center; gap: 18px;
       font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-      color: #6B4C9A;
+      background: #FFFFFF;
+      color: #000000;
+      z-index: 9999;
     }
     #app-loading .spinner {
       width: 42px; height: 42px; border-radius: 50%;
-      border: 4px solid #E5DBFF; border-top-color: #8B6FC4;
+      border: 4px solid #F7E98B; border-top-color: #FEDE2C;
       animation: spin 0.9s linear infinite;
     }
     #app-loading .txt { font-size: 15px; letter-spacing: 1px; }
@@ -58,7 +57,15 @@
     <div class="spinner"></div>
     <div class="txt">元宝拍拍加载中…</div>
   </div>
-  <!-- Flutter 会在加载完成后将其 view 挂载到 body，覆盖上面的 loading 提示 -->
+  <script>
+    // Flutter 首帧渲染后移除启动加载层，避免它继续遮挡页面。
+    window.addEventListener('flutter-first-frame', function () {
+      var loading = document.getElementById('app-loading');
+      if (loading) {
+        loading.remove();
+      }
+    });
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

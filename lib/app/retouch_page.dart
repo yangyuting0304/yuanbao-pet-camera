@@ -1,31 +1,40 @@
-import 'dart:typed_data';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:lucide_flutter/lucide_flutter.dart';
+import 'package:pet_camera/app/app_back_button.dart';
+import 'package:pet_camera/app/app_generated_result_page.dart';
+import 'package:pet_camera/app/app_horizontal_edge_inset.dart';
+import 'package:pet_camera/app/app_loading_view.dart';
+import 'package:pet_camera/app/app_photo_preview_panel.dart';
+import 'package:pet_camera/app/app_primary_action_button.dart';
+import 'package:pet_camera/app/mingcute_icons.dart';
 import 'package:pet_camera/app/retouch_data.dart';
 import 'package:pet_camera/app/tokens.dart';
+import 'package:pet_camera/data/ai_portrait_service.dart';
 import 'package:pet_camera/data/captured_photos.dart';
 import 'package:pet_camera/data/firered_service.dart';
 import 'package:pet_camera/data/models.dart';
 import 'package:pet_camera/data/seed_repository.dart';
 
-/// 选图源（拍摄图用 MemoryImage，种子图用 AssetImage）。
-class _Source {
-  const _Source(this.image, this.caption, {this.assetPath, this.bytes});
-  final ImageProvider image;
-  final String caption;
-  final String? assetPath;
-  final Uint8List? bytes;
+/// 宠物 P 图相册项。
+/// 这里把相册页里需要的图片、时间、宠物归属收口成一条数据，便于复用 AI 写真同款选图流程。
+class _RetouchAlbumItem {
+  const _RetouchAlbumItem({
+    required this.source,
+    required this.image,
+    required this.takenAt,
+    required this.petId,
+  });
 
-  /// 解析为字节流（拍摄图直接用 bytes，种子图经 rootBundle 加载）。
-  Future<Uint8List> resolveBytes() async {
-    if (bytes != null) return bytes!;
-    final data = await rootBundle.load(assetPath!);
-    return data.buffer.asUint8List();
-  }
+  final SourcePhoto source;
+  final ImageProvider image;
+  final DateTime takenAt;
+  final String petId;
+
+  /// 时间视图分组键：YYYY年M月。
+  String get monthKey => '${takenAt.year}年${takenAt.month}月';
 }
 
 /// 宠物 P 图编辑器：选图 + 滤镜 + 贴纸 + 背景 + 形状，一键存相册。
@@ -37,10 +46,13 @@ class RetouchPage extends ConsumerStatefulWidget {
 }
 
 class _RetouchPageState extends ConsumerState<RetouchPage> {
-  ImageProvider? _selected;
+  static const Color _secondaryOptionBorderColor = Color(0xFFE2E4E6);
+
+  SourcePhoto? _selected;
   int _filterIndex = 0;
   int _bgIndex = 0;
   int _shapeIndex = 0; // 0 圆角 1 圆形 2 方形
+  int? _stickerPresetIndex; // 记录最近选择的贴纸预设，方便显示选中态。
   int _activeTab = 0; // 0 滤镜 1 贴纸 2 背景 3 形状 4 AI 编辑
   final List<Sticker> _stickers = [];
   final _boundaryKey = GlobalKey();
@@ -48,16 +60,93 @@ class _RetouchPageState extends ConsumerState<RetouchPage> {
 
   // AI 创意编辑（FireRed）状态
   String _aiPrompt = kFireRedPresets.first.$2;
-  Uint8List? _aiResultBytes;
   bool _aiLoading = false;
-  bool _aiDemo = false;
   String? _aiError;
 
-  List<_Source> _buildSources(List<Photo> seed, List<CapturedPhoto> captured) {
-    final list = <_Source>[];
-    for (final c in captured) list.add(_Source(MemoryImage(c.bytes), '拍摄', bytes: c.bytes));
-    for (final p in seed) list.add(_Source(AssetImage(p.assetPath), p.petId, assetPath: p.assetPath));
+  /// 构建和 AI 写真一致的可选照片列表。
+  List<_RetouchAlbumItem> _buildAlbumItems(
+    List<Photo> seed,
+    List<CapturedPhoto> captured,
+  ) {
+    final list = <_RetouchAlbumItem>[];
+    for (final c in captured) {
+      list.add(
+        _RetouchAlbumItem(
+          source: SourcePhoto(bytes: c.bytes, caption: '拍摄照片'),
+          image: MemoryImage(c.bytes),
+          takenAt: c.takenAt,
+          petId: '',
+        ),
+      );
+    }
+    for (final p in seed) {
+      list.add(
+        _RetouchAlbumItem(
+          source: SourcePhoto(assetPath: p.assetPath, caption: p.petId),
+          image: AssetImage(p.assetPath),
+          takenAt: p.capturedAt,
+          petId: p.petId,
+        ),
+      );
+    }
     return list;
+  }
+
+  /// 把 SourcePhoto 转回页面可直接使用的 ImageProvider。
+  ImageProvider? _imageProviderFromSource(SourcePhoto? source) {
+    if (source == null) return null;
+    if (source.bytes != null) {
+      return MemoryImage(source.bytes!);
+    }
+    if (source.assetPath != null) {
+      return AssetImage(source.assetPath!);
+    }
+    return null;
+  }
+
+  /// 未选择照片时，统一用 toast 提示用户先上传图片。
+  void _showUploadPhotoToast() {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('请先上传照片')));
+  }
+
+  /// 编辑区顶部 Tab 点击。
+  /// 顶部 Tab 只负责切换，不在这一层提示上传照片。
+  void _handleEditorTabTap(int index) {
+    setState(() => _activeTab = index);
+  }
+
+  /// 二级页返回：有历史就返回，没有历史就回首页，避免刷新后二级页返回白屏。
+  void _handleBack() {
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+      return;
+    }
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil('/onboarding', (route) => false);
+  }
+
+  /// 打开和 AI 写真同款的相册选择页。
+  Future<void> _openAlbumPhotosPage(
+    BuildContext context,
+    List<_RetouchAlbumItem> items,
+    List<Pet> pets,
+  ) async {
+    final selected = await Navigator.of(context).push<SourcePhoto>(
+      MaterialPageRoute<SourcePhoto>(
+        builder: (_) => _RetouchAlbumPickerPage(
+          title: '选择照片',
+          items: items,
+          pets: pets,
+          selected: _selected,
+        ),
+      ),
+    );
+    if (selected != null && mounted) {
+      setState(() => _selected = selected);
+    }
   }
 
   Widget _shapeClip({required Widget child}) {
@@ -71,19 +160,29 @@ class _RetouchPageState extends ConsumerState<RetouchPage> {
     }
   }
 
-  Future<void> _save(ImageProvider selected) async {
-    if (_saving) return;
+  Future<void> _save() async {
+    if (_saving || _selected == null) return;
     setState(() => _saving = true);
     try {
-      final boundary = _boundaryKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+      final boundary =
+          _boundaryKey.currentContext!.findRenderObject()
+              as RenderRepaintBoundary;
       final img = await boundary.toImage(pixelRatio: 2);
       final bd = await img.toByteData(format: ImageByteFormat.png);
       if (bd != null) {
         ref.read(capturedPhotosProvider.notifier).add(bd.buffer.asUint8List());
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已存入相册')));
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('已存入相册')));
+        }
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('保存失败：$e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('保存失败：$e')));
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -93,137 +192,302 @@ class _RetouchPageState extends ConsumerState<RetouchPage> {
   Widget build(BuildContext context) {
     final t = context.tokens;
     final photosAsync = ref.watch(photosProvider);
+    final petsAsync = ref.watch(petsProvider);
     final captured = ref.watch(capturedPhotosProvider);
     final canvas = (MediaQuery.of(context).size.width - 40).clamp(240.0, 360.0);
 
     return Scaffold(
-      backgroundColor: t.bgBase,
+      // 宠物 P 图页面按最新要求改成纯白底。
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        leading: IconButton(icon: const Icon(LucideIcons.chevronLeft), onPressed: () => Navigator.pop(context)),
-        title: const Text('宠物 P 图', style: TextStyle(fontWeight: FontWeight.w600)),
+        toolbarHeight: 44,
+        leading: AppBackButton(onTap: _handleBack),
+        centerTitle: true,
+        title: Text(
+          '毛孩美颜',
+          style: TextStyle(
+            fontSize: AppUi.fontTitle,
+            height: AppUi.lineHeight(AppUi.fontTitle),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         backgroundColor: t.surface,
         foregroundColor: t.textPrimary,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
         elevation: 0,
-        actions: [
-          IconButton(
-            onPressed: _saving ? null : () => _save(_selected ?? const AssetImage('assets/seed/photos/yuanbao_headshot.png')),
-            icon: _saving
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.5))
-                : const Icon(LucideIcons.download),
-            tooltip: '保存到相册',
-          ),
-        ],
+        scrolledUnderElevation: 0,
       ),
+      bottomNavigationBar: _activeTab == 4
+          ? AppPrimaryActionIconBottomBar(
+              icon: LucideIcons.sparkles,
+              label: '生成照片',
+              onPressed: _selected == null
+                  ? null
+                  : () => _generateAi(_aiPrompt),
+              isLoading: _aiLoading,
+            )
+          : AppPrimaryActionIconBottomBar(
+              icon: LucideIcons.download,
+              label: '保存到相册',
+              onPressed: _selected == null ? null : _save,
+              isLoading: _saving,
+            ),
       body: photosAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const AppLoadingView(),
         error: (_, __) => const Center(child: Text('照片加载失败')),
-        data: (photos) {
-          final sources = _buildSources(photos, captured);
-          final selected = _selected ?? sources.first.image;
-          final selectedSource = sources.firstWhere((s) => s.image == selected, orElse: () => sources.first);
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              children: [
-                _SourceBar(sources: sources, selected: selected, onSelect: (img) => setState(() => _selected = img)),
-                const SizedBox(height: 18),
-                RepaintBoundary(
-                  key: _boundaryKey,
-                  child: Container(
-                    width: canvas,
-                    height: canvas,
-                    color: _bgIndex == 0 ? Colors.white : kBgs[_bgIndex].color,
-                    child: Stack(
-                      children: [
-                        Center(
-                          child: _shapeClip(
-                            child: ColorFiltered(
-                              colorFilter: ColorFilter.matrix(kFilters[_filterIndex].matrix),
-                              child: Image(image: selected, fit: BoxFit.cover, width: canvas, height: canvas),
-                            ),
-                          ),
+        data: (photos) => petsAsync.when(
+          loading: () => const AppLoadingView(),
+          error: (_, __) => const Center(child: Text('宠物加载失败')),
+          data: (pets) {
+            final items = _buildAlbumItems(photos, captured);
+            final selectedImage = _imageProviderFromSource(_selected);
+            final helperText = switch (_activeTab) {
+              1 => '贴纸可拖动，长按删除',
+              4 => '描述想改的效果，AI帮你换装/风格化',
+              _ => null,
+            };
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(
+                        '选择照片',
+                        style: TextStyle(
+                          fontSize: AppUi.fontHeadline,
+                          height: 28 / AppUi.fontHeadline,
+                          fontWeight: FontWeight.w400,
+                          color: t.textPrimary,
                         ),
-                        for (final s in _stickers)
-                          Positioned(
-                            left: s.x,
-                            top: s.y,
-                            child: GestureDetector(
-                              onPanUpdate: (d) => setState(() {
-                                s.x += d.delta.dx;
-                                s.y += d.delta.dy;
+                      ),
+                      if (_selected != null)
+                        Row(
+                          children: [
+                            _RetouchActionButton(
+                              label: '清空照片',
+                              onTap: () => setState(() {
+                                _selected = null;
+                                _stickerPresetIndex = null;
+                                _aiError = null;
                               }),
-                              onLongPress: () => setState(() => _stickers.remove(s)),
-                              child: Icon(s.icon, size: s.size, color: s.color),
                             ),
-                          ),
-                      ],
+                            const SizedBox(width: AppUi.space8),
+                            _RetouchActionButton(
+                              label: '重新选择',
+                              filled: true,
+                              onTap: () =>
+                                  _openAlbumPhotosPage(context, items, pets),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Center(
+                    child: RepaintBoundary(
+                      key: _boundaryKey,
+                      child: AppPhotoPreviewPanel(
+                        source: _selected,
+                        onTap: () => _openAlbumPhotosPage(context, items, pets),
+                        width: canvas,
+                        height: canvas,
+                        clickableWhenFilled: false,
+                        emptyIconName: MingCuteIcons.picLine,
+                        emptyText: '请先选择照片',
+                        emptyBackgroundColor: const Color(0xFFF6F8FA),
+                        filledBackgroundColor: _bgIndex == 0
+                            ? const Color(0xFFF6F8FA)
+                            : kBgs[_bgIndex].color ?? const Color(0xFFF6F8FA),
+                        filledChild: selectedImage == null
+                            ? null
+                            : Stack(
+                                children: [
+                                  Center(
+                                    child: _shapeClip(
+                                      child: ColorFiltered(
+                                        colorFilter: ColorFilter.matrix(
+                                          kFilters[_filterIndex].matrix,
+                                        ),
+                                        child: Image(
+                                          image: selectedImage,
+                                          fit: BoxFit.cover,
+                                          width: canvas,
+                                          height: canvas,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  for (final s in _stickers)
+                                    Positioned(
+                                      left: s.x,
+                                      top: s.y,
+                                      child: GestureDetector(
+                                        onPanUpdate: (d) => setState(() {
+                                          s.x += d.delta.dx;
+                                          s.y += d.delta.dy;
+                                        }),
+                                        onLongPress: () =>
+                                            setState(() => _stickers.remove(s)),
+                                        child: Icon(
+                                          s.icon,
+                                          size: s.size,
+                                          color: s.color,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                const Text('贴纸可拖动，长按删除', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                const SizedBox(height: 16),
-                _ToolTabs(active: _activeTab, onTap: (i) => setState(() => _activeTab = i)),
-                const SizedBox(height: 14),
-                _panel(t, canvas, selectedSource),
-              ],
-            ),
-          );
-        },
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(
+                        '编辑照片',
+                        style: TextStyle(
+                          fontSize: AppUi.fontHeadline,
+                          height: 28 / AppUi.fontHeadline,
+                          fontWeight: FontWeight.w400,
+                          color: t.textPrimary,
+                        ),
+                      ),
+                      Opacity(
+                        // 说明文案固定占位，避免切换 tab 时标题行抖动。
+                        opacity: helperText != null ? 1 : 0,
+                        child: Text(
+                          helperText ?? '',
+                          style: const TextStyle(
+                            fontSize: AppUi.fontCaption,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _ToolTabs(active: _activeTab, onTap: _handleEditorTabTap),
+                  const SizedBox(height: 8),
+                  _panel(t, canvas, _selected, selectedImage),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
 
-  Widget _panel(AppTokens t, double canvas, _Source selectedSource) {
+  Widget _panel(
+    AppTokens t,
+    double canvas,
+    SourcePhoto? selectedSource,
+    ImageProvider? selectedImage,
+  ) {
     switch (_activeTab) {
       case 0:
-        return _FilterPanel(active: _filterIndex, onSelect: (i) => setState(() => _filterIndex = i));
+        return _FilterPanel(
+          active: _filterIndex,
+          onSelect: (i) {
+            if (selectedSource == null) {
+              _showUploadPhotoToast();
+              return;
+            }
+            setState(() => _filterIndex = i);
+          },
+        );
       case 1:
         return _StickerPanel(
-          onAdd: (icon, color) => setState(() => _stickers.add(Sticker(icon, canvas / 2 - 24, canvas / 2 - 24, 48, color))),
-          onClear: () => setState(() => _stickers.clear()),
+          active: _stickerPresetIndex,
+          onAdd: (index, icon, color) {
+            if (selectedSource == null) {
+              _showUploadPhotoToast();
+              return;
+            }
+            setState(() {
+              _stickerPresetIndex = index;
+              _stickers.add(
+                Sticker(icon, canvas / 2 - 24, canvas / 2 - 24, 48, color),
+              );
+            });
+          },
+          onClear: () {
+            if (selectedSource == null) {
+              _showUploadPhotoToast();
+              return;
+            }
+            setState(() {
+              _stickers.clear();
+              _stickerPresetIndex = null;
+            });
+          },
         );
       case 2:
-        return _BgPanel(active: _bgIndex, onSelect: (i) => setState(() => _bgIndex = i));
+        return _BgPanel(
+          active: _bgIndex,
+          onSelect: (i) {
+            if (selectedSource == null) {
+              _showUploadPhotoToast();
+              return;
+            }
+            setState(() => _bgIndex = i);
+          },
+        );
       case 3:
-        return _ShapePanel(active: _shapeIndex, onSelect: (i) => setState(() => _shapeIndex = i));
+        return _ShapePanel(
+          active: _shapeIndex,
+          onSelect: (i) {
+            if (selectedSource == null) {
+              _showUploadPhotoToast();
+              return;
+            }
+            setState(() => _shapeIndex = i);
+          },
+        );
       default:
         return _AiEditPanel(
-          source: selectedSource,
           prompt: _aiPrompt,
           onPromptChanged: (v) => setState(() => _aiPrompt = v),
-          onGenerate: _generateAi,
           loading: _aiLoading,
-          resultBytes: _aiResultBytes,
-          demo: _aiDemo,
           error: _aiError,
-          onSave: _saveAiResult,
         );
     }
   }
 
   /// 调 FireRed 代理做图像编辑（图生图）。
   Future<void> _generateAi(String prompt) async {
-    if (_aiLoading) return;
-    final sources = _buildSources(
-      ref.read(photosProvider).value ?? <Photo>[],
-      ref.read(capturedPhotosProvider),
-    );
-    final sel = _selected ?? sources.first.image;
-    final src = sources.firstWhere((s) => s.image == sel, orElse: () => sources.first);
+    if (_aiLoading || _selected == null) return;
     setState(() {
       _aiLoading = true;
       _aiError = null;
-      _aiResultBytes = null;
-      _aiDemo = false;
     });
     try {
-      final bytes = await src.resolveBytes();
-      final res = await ref.read(fireRedServiceProvider).edit(sourceBytes: bytes, prompt: prompt);
-      if (mounted) setState(() {
-        _aiResultBytes = res.imageBytes;
-        _aiDemo = res.demo;
-      });
+      final bytes = await _selected!.resolveBytes();
+      final res = await ref
+          .read(fireRedServiceProvider)
+          .edit(sourceBytes: bytes, prompt: prompt);
+      if (!mounted) return;
+      setState(() => _aiLoading = false);
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => AppGeneratedResultPage(
+            resultBytes: res.imageBytes,
+            demo: res.demo,
+            demoText: '演示模式：未接入 AI 服务，已回显源图。',
+            onSave: () async {
+              ref.read(capturedPhotosProvider.notifier).add(res.imageBytes);
+            },
+          ),
+        ),
+      );
+      return;
     } on FireRedException catch (e) {
       if (mounted) setState(() => _aiError = e.message);
     } catch (e) {
@@ -231,58 +495,6 @@ class _RetouchPageState extends ConsumerState<RetouchPage> {
     } finally {
       if (mounted) setState(() => _aiLoading = false);
     }
-  }
-
-  /// 把 AI 编辑结果存入相册。
-  Future<void> _saveAiResult() async {
-    if (_aiResultBytes == null || _saving) return;
-    setState(() => _saving = true);
-    try {
-      ref.read(capturedPhotosProvider.notifier).add(_aiResultBytes!);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已存入相册')));
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('保存失败：$e')));
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-}
-
-/// 选图缩略图栏
-class _SourceBar extends StatelessWidget {
-  const _SourceBar({required this.sources, required this.selected, required this.onSelect});
-  final List<_Source> sources;
-  final ImageProvider selected;
-  final ValueChanged<ImageProvider> onSelect;
-  @override
-  Widget build(BuildContext context) {
-    final t = context.tokens;
-    return SizedBox(
-      height: 72,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: sources.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
-        itemBuilder: (c, i) {
-          final s = sources[i];
-          final isSel = s.image == selected;
-          return GestureDetector(
-            onTap: () => onSelect(s.image),
-            child: Container(
-              width: 72,
-              decoration: BoxDecoration(
-                border: Border.all(color: isSel ? t.brand : Colors.transparent, width: 3),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(11),
-                child: Image(image: s.image, fit: BoxFit.cover),
-              ),
-            ),
-          );
-        },
-      ),
-    );
   }
 }
 
@@ -301,27 +513,50 @@ class _ToolTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: List.generate(_tabs.length, (i) {
-        final (icon, label) = _tabs[i];
-        final on = i == active;
-        return GestureDetector(
-          onTap: () => onTap(i),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(color: on ? t.brand : t.surface, borderRadius: BorderRadius.circular(20)),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 16, color: on ? Colors.white : t.textSecondary),
-                const SizedBox(width: 6),
-                Text(label, style: TextStyle(fontSize: 13, fontWeight: on ? FontWeight.w700 : FontWeight.w500, color: on ? Colors.white : t.textSecondary)),
-              ],
+    return AppHorizontalEdgeScroll(
+      height: 40,
+      parentHorizontalPadding: 20,
+      child: Row(
+        children: List.generate(_tabs.length, (i) {
+          final (icon, label) = _tabs[i];
+          final on = i == active;
+          return Padding(
+            padding: EdgeInsets.only(right: i == _tabs.length - 1 ? 0 : 8),
+            child: GestureDetector(
+              onTap: () => onTap(i),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: on ? t.brand : const Color(0xFFF6F8FA),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      icon,
+                      size: AppUi.iconSmall,
+                      color: on ? t.textPrimary : t.textSecondary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: AppUi.fontBody,
+                        fontWeight: FontWeight.w400,
+                        color: on ? t.textPrimary : t.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-        );
-      }),
+          );
+        }),
+      ),
     );
   }
 }
@@ -333,69 +568,89 @@ class _FilterPanel extends StatelessWidget {
   final ValueChanged<int> onSelect;
   @override
   Widget build(BuildContext context) {
-    final t = context.tokens;
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: List.generate(kFilters.length, (i) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: kFilters.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: 2.2,
+      ),
+      itemBuilder: (context, i) {
         final f = kFilters[i];
         final on = i == active;
-        return GestureDetector(
+        return _RetouchSecondaryOptionTile(
           onTap: () => onSelect(i),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-            decoration: BoxDecoration(
-              color: on ? t.brand : t.surface,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: on ? t.brand : t.brandSoft, width: 1),
+          selected: on,
+          child: Center(
+            child: Text(
+              f.name,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: AppUi.fontBody,
+                fontWeight: FontWeight.w400,
+                color: context.tokens.textPrimary,
+              ),
             ),
-            child: Text(f.name, style: TextStyle(fontSize: 13, fontWeight: on ? FontWeight.w700 : FontWeight.w500, color: on ? Colors.white : t.textPrimary)),
           ),
         );
-      }),
+      },
     );
   }
 }
 
 /// 贴纸面板（添加 + 清空）
 class _StickerPanel extends StatelessWidget {
-  const _StickerPanel({required this.onAdd, required this.onClear});
-  final void Function(IconData, Color) onAdd;
+  const _StickerPanel({
+    required this.active,
+    required this.onAdd,
+    required this.onClear,
+  });
+  final int? active;
+  final void Function(int, IconData, Color) onAdd;
   final VoidCallback onClear;
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: [
-        for (final (icon, color) in kStickerIcons)
-          GestureDetector(
-            onTap: () => onAdd(icon, color),
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 2))],
-              ),
-              child: Icon(icon, size: 24, color: color),
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: kStickerIcons.length + 1,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: 1.15,
+      ),
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return _RetouchSecondaryOptionTile(
+            onTap: onClear,
+            selected: false,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(LucideIcons.undo2, size: 32, color: context.tokens.error),
+                const SizedBox(height: 8),
+                Text(
+                  '清空',
+                  style: TextStyle(
+                    fontSize: AppUi.fontCaption,
+                    color: context.tokens.error,
+                  ),
+                ),
+              ],
             ),
-          ),
-        GestureDetector(
-          onTap: onClear,
-          child: Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 2))],
-            ),
-            child: Icon(LucideIcons.undo2, size: 20, color: context.tokens.textSecondary),
-          ),
-        ),
-      ],
+          );
+        }
+        final (icon, color) = kStickerIcons[index - 1];
+        return _RetouchSecondaryOptionTile(
+          onTap: () => onAdd(index - 1, icon, color),
+          selected: active == index - 1,
+          child: Center(child: Icon(icon, size: 32, color: color)),
+        );
+      },
     );
   }
 }
@@ -407,27 +662,59 @@ class _BgPanel extends StatelessWidget {
   final ValueChanged<int> onSelect;
   @override
   Widget build(BuildContext context) {
-    final t = context.tokens;
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: List.generate(kBgs.length, (i) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: kBgs.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: 1.15,
+      ),
+      itemBuilder: (context, i) {
         final b = kBgs[i];
         final on = i == active;
-        return GestureDetector(
+        return _RetouchSecondaryOptionTile(
           onTap: () => onSelect(i),
-          child: Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: b.color ?? Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: on ? t.brand : Colors.black.withValues(alpha: 0.1), width: on ? 3 : 1),
-            ),
-            child: b.color == null ? Icon(LucideIcons.ban, size: 18, color: t.textSecondary) : null,
+          selected: on,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: b.color ?? Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: b.color == null
+                        ? const Color(0xFFE2E4E6)
+                        : Colors.transparent,
+                    width: 1,
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: b.color == null
+                    ? Icon(
+                        LucideIcons.ban,
+                        size: AppUi.iconSmall,
+                        color: context.tokens.textSecondary,
+                      )
+                    : null,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                b.name,
+                style: TextStyle(
+                  fontSize: AppUi.fontCaption,
+                  color: context.tokens.textPrimary,
+                ),
+              ),
+            ],
           ),
         );
-      }),
+      },
     );
   }
 }
@@ -444,35 +731,73 @@ class _ShapePanel extends StatelessWidget {
   ];
   @override
   Widget build(BuildContext context) {
-    final t = context.tokens;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(_shapes.length, (i) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: _shapes.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: 1.15,
+      ),
+      itemBuilder: (context, i) {
         final (icon, label) = _shapes[i];
         final on = i == active;
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: GestureDetector(
-            onTap: () => onSelect(i),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: on ? t.brand : t.surface,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: on ? t.brand : t.brandSoft, width: 1),
+        return _RetouchSecondaryOptionTile(
+          onTap: () => onSelect(i),
+          selected: on,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 32, color: Colors.black),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: AppUi.fontCaption,
+                  fontWeight: on ? FontWeight.w700 : FontWeight.w400,
+                  color: context.tokens.textPrimary,
+                ),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(icon, size: 16, color: on ? Colors.white : t.textSecondary),
-                  const SizedBox(width: 6),
-                  Text(label, style: TextStyle(fontSize: 13, fontWeight: on ? FontWeight.w700 : FontWeight.w500, color: on ? Colors.white : t.textPrimary)),
-                ],
-              ),
-            ),
+            ],
           ),
         );
-      }),
+      },
+    );
+  }
+}
+
+/// 次级选项统一卡片。
+/// 统一为白底卡片，选中时主色描边，未选中时浅色描边。
+class _RetouchSecondaryOptionTile extends StatelessWidget {
+  const _RetouchSecondaryOptionTile({
+    required this.child,
+    required this.onTap,
+    required this.selected,
+  });
+
+  final Widget child;
+  final VoidCallback onTap;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(AppUi.radiusCard),
+          border: Border.all(
+            color: selected
+                ? context.tokens.brand
+                : _RetouchPageState._secondaryOptionBorderColor,
+            width: 1,
+          ),
+        ),
+        child: child,
+      ),
     );
   }
 }
@@ -480,25 +805,15 @@ class _ShapePanel extends StatelessWidget {
 /// AI 创意编辑面板（FireRed-Image-Edit）：选图 + 快捷 prompt + 自定义 + 生成 + 结果九宫格。
 class _AiEditPanel extends StatelessWidget {
   const _AiEditPanel({
-    required this.source,
     required this.prompt,
     required this.onPromptChanged,
-    required this.onGenerate,
     required this.loading,
-    required this.resultBytes,
-    required this.demo,
     required this.error,
-    required this.onSave,
   });
-  final _Source source;
   final String prompt;
   final ValueChanged<String> onPromptChanged;
-  final ValueChanged<String> onGenerate;
   final bool loading;
-  final Uint8List? resultBytes;
-  final bool demo;
   final String? error;
-  final VoidCallback onSave;
 
   @override
   Widget build(BuildContext context) {
@@ -506,88 +821,74 @@ class _AiEditPanel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('AI 创意编辑', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF2D2D2D))),
-        const SizedBox(height: 4),
-        const Text('选一张毛孩照片，描述想改的效果，AI 帮你换装 / 风格化（图生图生成，结果含多个变体）',
-            style: TextStyle(fontSize: 11, color: Colors.grey)),
-        const SizedBox(height: 12),
-        // 当前源图预览
-        Center(
-          child: Container(
-            width: 96,
-            height: 96,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: t.brandSoft, width: 1),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(15),
-              child: Image(image: source.image, fit: BoxFit.cover),
-            ),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: kFireRedPresets.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            childAspectRatio: 2.2,
           ),
-        ),
-        const SizedBox(height: 12),
-        // 快捷 prompt
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final (label, p) in kFireRedPresets)
-              GestureDetector(
-                onTap: loading ? null : () => onPromptChanged(p),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: prompt == p ? t.brand : t.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: t.brandSoft, width: 1),
+          itemBuilder: (context, index) {
+            final (label, p) = kFireRedPresets[index];
+            final selected = prompt == p;
+            return _RetouchSecondaryOptionTile(
+              onTap: loading ? () {} : () => onPromptChanged(p),
+              selected: selected,
+              child: Center(
+                child: Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: AppUi.fontBody,
+                    fontWeight: FontWeight.w400,
+                    color: t.textPrimary,
                   ),
-                  child: Text(label,
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: prompt == p ? FontWeight.w700 : FontWeight.w500,
-                          color: prompt == p ? Colors.white : t.textPrimary)),
                 ),
               ),
-          ],
+            );
+          },
         ),
         const SizedBox(height: 12),
         // 自定义 prompt
         TextField(
           onChanged: onPromptChanged,
-          controller: TextEditingController(text: prompt),
-          maxLines: 2,
+          minLines: 3,
+          maxLines: 3,
+          style: TextStyle(fontSize: AppUi.fontBody, color: t.textPrimary),
+          textAlignVertical: TextAlignVertical.top,
           decoration: InputDecoration(
-            hintText: '用英文描述效果，如：Add a birthday hat on the cat',
-            hintStyle: const TextStyle(fontSize: 12, color: Colors.grey),
+            // 输入框默认展示中文说明，内部仍然保留当前英文 prompt 用于生成。
+            hintText: '描述想改的效果，例如：给毛孩加一个粉色蝴蝶结，保持原来的姿势和构图',
+            hintStyle: TextStyle(
+              fontSize: AppUi.fontBody,
+              color: t.textSecondary,
+            ),
             filled: true,
             fillColor: t.surface,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 12,
+            ),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: t.brandSoft),
+              borderRadius: BorderRadius.circular(AppUi.radiusCard),
+              borderSide: const BorderSide(
+                color: _RetouchPageState._secondaryOptionBorderColor,
+              ),
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: t.brandSoft),
+              borderRadius: BorderRadius.circular(AppUi.radiusCard),
+              borderSide: const BorderSide(
+                color: _RetouchPageState._secondaryOptionBorderColor,
+              ),
             ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        // 生成按钮
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: loading ? null : () => onGenerate(prompt),
-            icon: loading
-                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
-                : const Icon(LucideIcons.sparkles, size: 16),
-            label: Text(loading ? '生成中…' : '生成', style: const TextStyle(fontWeight: FontWeight.w700)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: t.brand,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppUi.radiusCard),
+              borderSide: const BorderSide(
+                color: _RetouchPageState._secondaryOptionBorderColor,
+              ),
             ),
           ),
         ),
@@ -599,46 +900,662 @@ class _AiEditPanel extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: Colors.red.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppUi.radiusCard),
             ),
-            child: Text(error!, style: const TextStyle(fontSize: 12, color: Colors.red)),
-          ),
-        // 结果
-        if (resultBytes != null) ...[
-          if (demo)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text('演示模式：未接入 AI 服务，已回显源图。部署代理后注入 FIERED_PROXY_URL 即可生效。',
-                  style: TextStyle(fontSize: 11, color: Colors.orange)),
-            ),
-          Container(
-            width: double.infinity,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: t.brandSoft, width: 1),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(15),
-              child: Image.memory(resultBytes!, fit: BoxFit.cover),
-            ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: onSave,
-              icon: const Icon(LucideIcons.download, size: 16),
-              label: const Text('存入相册', style: TextStyle(fontWeight: FontWeight.w600)),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: t.brand,
-                side: BorderSide(color: t.brand),
-                padding: const EdgeInsets.symmetric(vertical: 11),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            child: Text(
+              error!,
+              style: const TextStyle(
+                fontSize: AppUi.fontCaption,
+                color: Colors.red,
               ),
             ),
           ),
-        ],
       ],
+    );
+  }
+}
+
+/// 标题行右侧的操作按钮。
+/// 这里直接和 AI 写真使用同一套尺寸与颜色规则。
+class _RetouchActionButton extends StatelessWidget {
+  const _RetouchActionButton({
+    required this.label,
+    required this.onTap,
+    this.filled = false,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        decoration: BoxDecoration(
+          color: filled ? context.tokens.brand : const Color(0xFFF6F8FA),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            fontSize: AppUi.fontCaption,
+            height: 20 / AppUi.fontCaption,
+            fontWeight: FontWeight.w400,
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 宠物 P 图相册选择页。
+/// 这里直接复用 AI 写真的单张选图流程和筛选结构，只是回填目标换成宠物 P 图。
+class _RetouchAlbumPickerPage extends StatefulWidget {
+  const _RetouchAlbumPickerPage({
+    required this.title,
+    required this.items,
+    required this.pets,
+    required this.selected,
+  });
+
+  final String title;
+  final List<_RetouchAlbumItem> items;
+  final List<Pet> pets;
+  final SourcePhoto? selected;
+
+  @override
+  State<_RetouchAlbumPickerPage> createState() =>
+      _RetouchAlbumPickerPageState();
+}
+
+class _RetouchAlbumPickerPageState extends State<_RetouchAlbumPickerPage> {
+  bool _byTime = false;
+  String? _selectedPetId;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        toolbarHeight: 44,
+        leading: AppBackButton(onTap: () => Navigator.pop(context)),
+        centerTitle: true,
+        title: Text(
+          widget.title,
+          style: TextStyle(
+            fontSize: AppUi.fontTitle,
+            height: AppUi.lineHeight(AppUi.fontTitle),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        backgroundColor: context.tokens.surface,
+        foregroundColor: context.tokens.textPrimary,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+      ),
+      body: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppUi.pagePadding,
+                AppUi.space24,
+                AppUi.pagePadding,
+                0,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          '筛选',
+                          style: TextStyle(
+                            fontSize: AppUi.fontHeadline,
+                            height: 28 / AppUi.fontHeadline,
+                            fontWeight: FontWeight.w400,
+                            color: Color(0xFF000000),
+                          ),
+                        ),
+                      ),
+                      _RetouchAlbumModeTabs(
+                        byTime: _byTime,
+                        onSelectCategory: () => setState(() => _byTime = false),
+                        onSelectTime: () => setState(() => _byTime = true),
+                      ),
+                    ],
+                  ),
+                  if (!_byTime) ...[
+                    const SizedBox(height: 12),
+                    _buildPetFilterBar(),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          if (_byTime) ..._buildTimeSlivers() else ..._buildPetSlivers(),
+        ],
+      ),
+    );
+  }
+
+  /// 构建顶部宠物筛选条。
+  Widget _buildPetFilterBar() {
+    final petsWithPhotos = widget.pets
+        .where((p) => widget.items.any((it) => it.petId == p.id))
+        .toList();
+
+    return SizedBox(
+      height: 88,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: petsWithPhotos.length + 1,
+        separatorBuilder: (_, __) => const SizedBox(width: AppUi.space16),
+        itemBuilder: (_, index) {
+          if (index == 0) {
+            return _RetouchPetFilterAllTile(
+              selected: _selectedPetId == null,
+              onTap: () => setState(() => _selectedPetId = null),
+            );
+          }
+          final pet = petsWithPhotos[index - 1];
+          return _RetouchPetFilterAvatarTile(
+            name: pet.name,
+            avatarPath: pet.avatarPath,
+            selected: _selectedPetId == pet.id,
+            onTap: () => setState(() => _selectedPetId = pet.id),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 按宠物分组展示照片。
+  List<Widget> _buildPetSlivers() {
+    if (widget.pets.isEmpty) {
+      return [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(
+            AppUi.pagePadding,
+            AppUi.space32,
+            AppUi.pagePadding,
+            24,
+          ),
+          sliver: _RetouchSquareGridSliver(
+            items: widget.items,
+            selected: widget.selected,
+          ),
+        ),
+      ];
+    }
+
+    final groups = <String, List<_RetouchAlbumItem>>{};
+    for (final item in widget.items) {
+      if (item.petId.isNotEmpty) {
+        groups.putIfAbsent(item.petId, () => []).add(item);
+      } else {
+        groups.putIfAbsent('__other__', () => []).add(item);
+      }
+    }
+
+    final slivers = <Widget>[];
+    final petList = widget.pets
+        .where((p) => (groups[p.id]?.isNotEmpty ?? false))
+        .where((p) => _selectedPetId == null || _selectedPetId == p.id)
+        .toList();
+
+    for (final pet in petList) {
+      final petItems = groups[pet.id]!;
+      slivers.add(
+        SliverMainAxisGroup(
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppUi.pagePadding,
+                  AppUi.space32,
+                  AppUi.pagePadding,
+                  AppUi.space12,
+                ),
+                child: _RetouchPetProfileHeader(
+                  pet: pet,
+                  count: petItems.length,
+                ),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppUi.pagePadding,
+              ),
+              sliver: _RetouchSquareGridSliver(
+                items: petItems,
+                selected: widget.selected,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final otherItems = _selectedPetId == null ? groups['__other__'] : null;
+    if (otherItems != null && otherItems.isNotEmpty) {
+      slivers.add(
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(
+            AppUi.pagePadding,
+            AppUi.space32,
+            AppUi.pagePadding,
+            24,
+          ),
+          sliver: _RetouchSquareGridSliver(
+            items: otherItems,
+            selected: widget.selected,
+          ),
+        ),
+      );
+    }
+
+    if (slivers.isEmpty) {
+      slivers.add(
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Text(
+              '还没有照片哦～',
+              style: TextStyle(
+                fontSize: AppUi.fontTitle,
+                color: context.tokens.textSecondary,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return slivers;
+  }
+
+  /// 按时间分组展示照片。
+  List<Widget> _buildTimeSlivers() {
+    final groups = <String, List<_RetouchAlbumItem>>{};
+    for (final item in widget.items) {
+      groups.putIfAbsent(item.monthKey, () => []).add(item);
+    }
+    final keys = groups.keys.toList();
+    return [
+      for (final key in keys)
+        SliverMainAxisGroup(
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppUi.pagePadding,
+                  AppUi.space32,
+                  AppUi.pagePadding,
+                  AppUi.space12,
+                ),
+                child: Text(
+                  key,
+                  style: TextStyle(
+                    fontSize: AppUi.fontTitle,
+                    fontWeight: FontWeight.w700,
+                    color: context.tokens.textPrimary,
+                  ),
+                ),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppUi.pagePadding,
+              ),
+              sliver: _RetouchSquareGridSliver(
+                items: groups[key]!,
+                selected: widget.selected,
+              ),
+            ),
+          ],
+        ),
+    ];
+  }
+}
+
+/// 相册顶部模式切换容器。
+class _RetouchAlbumModeTabs extends StatelessWidget {
+  const _RetouchAlbumModeTabs({
+    required this.byTime,
+    required this.onSelectCategory,
+    required this.onSelectTime,
+  });
+
+  final bool byTime;
+  final VoidCallback onSelectCategory;
+  final VoidCallback onSelectTime;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 99,
+      height: 26,
+      padding: const EdgeInsets.all(1),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF6F8FA),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: _RetouchAlbumModeTab(
+              label: '分类',
+              selected: !byTime,
+              onTap: onSelectCategory,
+            ),
+          ),
+          const SizedBox(width: 1),
+          Expanded(
+            child: _RetouchAlbumModeTab(
+              label: '时间',
+              selected: byTime,
+              onTap: onSelectTime,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 相册顶部单个模式切换标签。
+class _RetouchAlbumModeTab extends StatelessWidget {
+  const _RetouchAlbumModeTab({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        height: 24,
+        decoration: BoxDecoration(
+          color: selected ? context.tokens.brand : const Color(0xFFF6F8FA),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: AppUi.fontCaption,
+            height: 18 / AppUi.fontCaption,
+            fontWeight: FontWeight.w600,
+            color: selected ? const Color(0xFF000000) : const Color(0xFFB4B4B4),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 宠物头像筛选项。
+class _RetouchPetFilterAvatarTile extends StatelessWidget {
+  const _RetouchPetFilterAvatarTile({
+    required this.name,
+    required this.avatarPath,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String name;
+  final String avatarPath;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        width: 64,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Container(
+              width: 64,
+              height: 64,
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: selected
+                      ? const Color(0xFF000000)
+                      : const Color(0xFFE2E4E6),
+                  width: 1,
+                ),
+              ),
+              child: ClipOval(
+                child: Image.asset(
+                  avatarPath,
+                  width: 56,
+                  height: 56,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppUi.space4),
+            Text(
+              name,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: AppUi.fontCaption,
+                height: 20 / AppUi.fontCaption,
+                fontWeight: FontWeight.w400,
+                color: selected
+                    ? const Color(0xFF000000)
+                    : const Color(0xFF999999),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// “全部”筛选项。
+class _RetouchPetFilterAllTile extends StatelessWidget {
+  const _RetouchPetFilterAllTile({required this.selected, required this.onTap});
+
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        width: 64,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: selected
+                      ? const Color(0xFF000000)
+                      : const Color(0xFFE2E4E6),
+                  width: 1,
+                ),
+              ),
+              alignment: Alignment.center,
+              child: const MingCuteIcon(
+                MingCuteIcons.classify3AiFill,
+                size: AppUi.iconLarge,
+                color: Color(0xFF000000),
+              ),
+            ),
+            const SizedBox(height: AppUi.space4),
+            Text(
+              '全部',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: AppUi.fontCaption,
+                height: 20 / AppUi.fontCaption,
+                fontWeight: FontWeight.w400,
+                color: selected
+                    ? const Color(0xFF000000)
+                    : const Color(0xFF999999),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 宠物信息卡。
+class _RetouchPetProfileHeader extends StatelessWidget {
+  const _RetouchPetProfileHeader({required this.pet, required this.count});
+
+  final Pet pet;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final subtitle = pet.breed.isNotEmpty
+        ? (pet.ageLabel != '未知' ? '${pet.breed} · ${pet.ageLabel}' : pet.breed)
+        : (pet.ageLabel != '未知' ? pet.ageLabel : '');
+    return Container(
+      height: 72,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF6F8FA),
+        borderRadius: BorderRadius.circular(AppUi.radiusCard),
+      ),
+      child: Row(
+        children: [
+          ClipOval(
+            child: Image.asset(
+              pet.avatarPath,
+              width: 48,
+              height: 48,
+              fit: BoxFit.cover,
+            ),
+          ),
+          const SizedBox(width: AppUi.space12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  pet.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: AppUi.fontTitle,
+                    height: 24 / AppUi.fontTitle,
+                    fontWeight: FontWeight.w400,
+                    color: Color(0xFF000000),
+                  ),
+                ),
+                const SizedBox(height: AppUi.space4),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: AppUi.fontCaption,
+                    height: 20 / AppUi.fontCaption,
+                    fontWeight: FontWeight.w400,
+                    color: Color(0xFF999999),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppUi.space12),
+          Text(
+            '$count张',
+            style: TextStyle(
+              fontSize: AppUi.fontBody,
+              height: AppUi.lineHeight(AppUi.fontBody),
+              fontWeight: FontWeight.w400,
+              color: context.tokens.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 正方形照片选择网格。
+/// 选中态和 AI 写真保持一致：图片缩小 90%，外层主色 2px 描边。
+class _RetouchSquareGridSliver extends StatelessWidget {
+  const _RetouchSquareGridSliver({required this.items, required this.selected});
+
+  final List<_RetouchAlbumItem> items;
+  final SourcePhoto? selected;
+
+  bool _isSame(SourcePhoto a, SourcePhoto b) =>
+      a.assetPath == b.assetPath && a.bytes == b.bytes;
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverGrid(
+      delegate: SliverChildBuilderDelegate((context, index) {
+        final item = items[index];
+        final isSelected = selected != null && _isSame(selected!, item.source);
+        return GestureDetector(
+          onTap: () => Navigator.of(context).pop(item.source),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppUi.radiusCard),
+              border: Border.all(
+                color: isSelected ? context.tokens.brand : Colors.transparent,
+                width: 1,
+              ),
+            ),
+            child: Padding(
+              padding: EdgeInsets.all(isSelected ? 8 : 0),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(
+                  isSelected ? AppUi.radiusCard - 4 : AppUi.radiusCard,
+                ),
+                child: Image(image: item.image, fit: BoxFit.cover),
+              ),
+            ),
+          ),
+        );
+      }, childCount: items.length),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 1,
+      ),
     );
   }
 }
