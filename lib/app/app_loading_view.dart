@@ -21,13 +21,19 @@ class AppLoadingView extends StatelessWidget {
     final content = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        CircularProgressIndicator(color: t.brand, strokeWidth: 3),
+        // 固定一个更清晰的尺寸，避免手机上默认 loading 过小。
+        SizedBox(
+          width: compact ? 28 : 40,
+          height: compact ? 28 : 40,
+          child: CircularProgressIndicator(color: t.brand, strokeWidth: 3.5),
+        ),
         if (!compact) ...[
           const SizedBox(height: AppUi.space12),
-          const Text(
-            '加载中...',
+          Text(
+            label,
             style: TextStyle(
-              fontSize: AppUi.fontBody,
+              fontSize: 16,
+              height: 24 / 16,
               color: Color(0xFF000000),
               fontWeight: FontWeight.w400,
             ),

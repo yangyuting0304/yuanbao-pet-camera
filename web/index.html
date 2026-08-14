@@ -19,6 +19,11 @@
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="元宝拍拍 - AI 宠物影像 App">
+  <!-- 移动端必须声明视口，否则页面会按桌面宽度缩放，导致 loading 在手机上显得特别小。 -->
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+  >
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -37,18 +42,35 @@
     html, body { margin: 0; padding: 0; height: 100%; background: #FFFFFF; }
     #app-loading {
       position: fixed; inset: 0; display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 18px;
+      align-items: center; justify-content: center; gap: 20px;
+      padding: 24px;
       font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
       background: #FFFFFF;
       color: #000000;
+      text-align: center;
       z-index: 9999;
     }
     #app-loading .spinner {
-      width: 42px; height: 42px; border-radius: 50%;
-      border: 4px solid #F7E98B; border-top-color: #FEDE2C;
+      width: clamp(56px, 15vw, 72px);
+      height: clamp(56px, 15vw, 72px);
+      border-radius: 50%;
+      border: 5px solid #F7E98B;
+      border-top-color: #FEDE2C;
       animation: spin 0.9s linear infinite;
     }
-    #app-loading .txt { font-size: 15px; letter-spacing: 1px; }
+    #app-loading .txt {
+      font-size: clamp(16px, 4.2vw, 18px);
+      line-height: 24px;
+      letter-spacing: 0.5px;
+    }
+    #app-loading .slow-tip {
+      display: none;
+      max-width: 260px;
+      font-size: 14px;
+      line-height: 20px;
+      color: #666666;
+    }
+    #app-loading.is-slow .slow-tip { display: block; }
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
@@ -56,10 +78,19 @@
   <div id="app-loading">
     <div class="spinner"></div>
     <div class="txt">元宝拍拍加载中…</div>
+    <div class="slow-tip">手机首次打开需要下载较大的预览资源，请稍等几秒；如果 15 秒后还没进入，请刷新一次。</div>
   </div>
   <script>
     // Flutter 首帧渲染后移除启动加载层，避免它继续遮挡页面。
+    var slowLoadingTimer = window.setTimeout(function () {
+      var loading = document.getElementById('app-loading');
+      if (loading) {
+        loading.classList.add('is-slow');
+      }
+    }, 4000);
+
     window.addEventListener('flutter-first-frame', function () {
+      window.clearTimeout(slowLoadingTimer);
       var loading = document.getElementById('app-loading');
       if (loading) {
         loading.remove();

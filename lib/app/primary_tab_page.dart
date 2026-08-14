@@ -107,7 +107,7 @@ class HomePage extends ConsumerWidget {
       title: '一键成片',
       subtitle: '选几张图就能做短片',
       tag: '视频',
-      icon: MingCuteIcons.clapperboard,
+      icon: MingCuteIcons.videoLine,
       imagePath: 'assets/seed/photos/feat_video_thumb.jpg',
       videoAssetPath: 'assets/seed/photos/feat_video_compressed.mp4',
       route: '/short-video',
@@ -134,6 +134,16 @@ class HomePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final petsAsync = ref.watch(petsProvider);
     final photosAsync = ref.watch(photosProvider);
+    final recentPhotoPaths = photosAsync.maybeWhen(
+      // 首页“毛孩近照”只展示最近 20 张，避免首屏列表过长。
+      data: (photos) => photos
+          .take(20)
+          .map((photo) => photo.assetPath)
+          .toList(growable: false),
+      orElse: () => _recentPhotos
+          .map((fileName) => 'assets/seed/photos/$fileName')
+          .toList(growable: false),
+    );
     final heroPreviewPaths = photosAsync.maybeWhen(
       // 首屏缩略图直接复用现有相册数据，数量在卡片内部按可用宽度动态计算。
       data: (photos) =>
@@ -263,8 +273,11 @@ class HomePage extends ConsumerWidget {
                 100,
               ),
               child: _RecentPhotoStrip(
-                photos: _recentPhotos,
-                onTap: () => Navigator.pushNamed(context, '/album-detail'),
+                photos: recentPhotoPaths,
+                onTapPhoto: (assetPath) => showDialog<void>(
+                  context: context,
+                  builder: (_) => _HomeRecentPhotoDialog(assetPath: assetPath),
+                ),
               ),
             ),
           ),
@@ -315,12 +328,16 @@ class MinePage extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 20),
-            const _SectionTitle(title: '常用入口', icon: MingCuteIcons.layoutGrid),
+            const _SectionTitle(
+              title: '常用入口',
+              titleSize: 20,
+              titleWeight: FontWeight.w400,
+            ),
             const SizedBox(height: 12),
             _MineActionTile(
-              title: '我的短片库',
-              subtitle: '查看已经剪辑保存的宠物短片',
-              icon: MingCuteIcons.film,
+              title: '我的短片',
+              subtitle: '',
+              icon: MingCuteIcons.videoLine,
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) => const ShortVideoLibraryPage(),
@@ -330,15 +347,15 @@ class MinePage extends ConsumerWidget {
             const SizedBox(height: 12),
             _MineActionTile(
               title: '成长手记',
-              subtitle: '查看宠物档案、疫苗和日常记录',
-              icon: MingCuteIcons.book,
+              subtitle: '',
+              icon: MingCuteIcons.leaf2Line,
               onTap: () => Navigator.pushNamed(context, '/pet-profile'),
             ),
             const SizedBox(height: 12),
             _MineActionTile(
               title: '设置',
-              subtitle: '外观模式、缓存清理和版本信息',
-              icon: MingCuteIcons.settings2,
+              subtitle: '',
+              icon: MingCuteIcons.settings3Line,
               onTap: () => Navigator.pushNamed(context, '/settings'),
             ),
           ],
@@ -799,7 +816,7 @@ class _HeroAlbumEntry extends StatelessWidget {
         child: MingCuteIcon(
           MingCuteIcons.rightLine,
           size: 20,
-          color: context.tokens.textPrimary,
+          color: const Color(0xFF999999),
         ),
       ),
     );
@@ -952,15 +969,13 @@ class _PetSnapshotAvatar extends StatelessWidget {
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle({
     required this.title,
-    this.icon,
     this.titleSize = AppUi.fontTitle,
-    this.titleWeight = FontWeight.w700,
+    this.titleWeight = FontWeight.w400,
     this.trailingLabel,
     this.onTrailingTap,
   });
 
   final String title;
-  final String? icon;
   final double titleSize;
   final FontWeight titleWeight;
   final String? trailingLabel;
@@ -970,14 +985,6 @@ class _SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        if (icon != null) ...[
-          MingCuteIcon(
-            icon!,
-            size: AppUi.iconMedium,
-            color: context.tokens.textPrimary,
-          ),
-          const SizedBox(width: 8),
-        ],
         Expanded(
           child: Text(
             title,
@@ -1008,7 +1015,7 @@ class _SectionTitle extends StatelessWidget {
                 MingCuteIcon(
                   MingCuteIcons.rightLine,
                   size: AppUi.iconSmall,
-                  color: context.tokens.textTertiary,
+                  color: const Color(0xFF999999),
                 ),
               ],
             ),
@@ -1071,8 +1078,8 @@ class _FeatureCard extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontSize: AppUi.fontBody,
-                                height: 22 / AppUi.fontBody,
+                                fontSize: 16,
+                                height: 24 / 16,
                                 fontWeight: FontWeight.w400,
                                 color: context.tokens.textPrimary,
                               ),
@@ -1080,20 +1087,24 @@ class _FeatureCard extends StatelessWidget {
                           ),
                           const SizedBox(width: AppUi.space8),
                           Container(
-                            height: 16,
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            constraints: const BoxConstraints(minWidth: 40),
+                            height: 20,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 1,
+                            ),
                             decoration: BoxDecoration(
                               color: const Color(0xFFFFEE35),
-                              borderRadius: BorderRadius.circular(4),
+                              borderRadius: BorderRadius.circular(6),
                             ),
-                            // 标签宽度由文字内容自适应撑开，只保留左右 8 的内边距。
+                            alignment: Alignment.center,
                             child: Text(
                               feature.tag,
                               maxLines: 1,
                               softWrap: false,
                               style: TextStyle(
-                                fontSize: 10,
-                                height: 16 / 10,
+                                fontSize: 12,
+                                height: 18 / 12,
                                 fontWeight: FontWeight.w400,
                                 color: context.tokens.textPrimary,
                               ),
@@ -1212,10 +1223,10 @@ class _FeatureCoverState extends State<_FeatureCover> {
 }
 
 class _RecentPhotoStrip extends StatelessWidget {
-  const _RecentPhotoStrip({required this.photos, required this.onTap});
+  const _RecentPhotoStrip({required this.photos, required this.onTapPhoto});
 
   final List<String> photos;
-  final VoidCallback onTap;
+  final ValueChanged<String> onTapPhoto;
 
   double _aspectRatio(int index) {
     switch (index % 5) {
@@ -1252,7 +1263,7 @@ class _RecentPhotoStrip extends StatelessWidget {
             photos: photos,
             indices: leftPhotos,
             getRatio: _aspectRatio,
-            onTap: onTap,
+            onTapPhoto: onTapPhoto,
           ),
         ),
         const SizedBox(width: 8),
@@ -1261,7 +1272,7 @@ class _RecentPhotoStrip extends StatelessWidget {
             photos: photos,
             indices: rightPhotos,
             getRatio: _aspectRatio,
-            onTap: onTap,
+            onTapPhoto: onTapPhoto,
           ),
         ),
       ],
@@ -1274,13 +1285,13 @@ class _RecentPhotoColumn extends StatelessWidget {
     required this.photos,
     required this.indices,
     required this.getRatio,
-    required this.onTap,
+    required this.onTapPhoto,
   });
 
   final List<String> photos;
   final List<int> indices;
   final double Function(int) getRatio;
-  final VoidCallback onTap;
+  final ValueChanged<String> onTapPhoto;
 
   @override
   Widget build(BuildContext context) {
@@ -1291,9 +1302,9 @@ class _RecentPhotoColumn extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: _RecentPhotoTile(
-              assetPath: 'assets/seed/photos/${photos[index]}',
+              assetPath: photos[index],
               aspectRatio: getRatio(index),
-              onTap: onTap,
+              onTap: () => onTapPhoto(photos[index]),
             ),
           ),
       ],
@@ -1323,6 +1334,25 @@ class _RecentPhotoTile extends StatelessWidget {
           aspectRatio: aspectRatio,
           child: Image.asset(assetPath, fit: BoxFit.cover),
         ),
+      ),
+    );
+  }
+}
+
+/// 首页“毛孩近照”点击后直接在当前页预览，不再跳转到相册页。
+class _HomeRecentPhotoDialog extends StatelessWidget {
+  const _HomeRecentPhotoDialog({required this.assetPath});
+
+  final String assetPath;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.all(20),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Image.asset(assetPath, fit: BoxFit.contain),
       ),
     );
   }
@@ -1476,39 +1506,52 @@ class _MineProfileCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final firstPet = pets.isEmpty ? null : pets.first;
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(12, 24, 12, 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8F6F2),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(AppUi.radiusCard),
       ),
+      constraints: const BoxConstraints(minHeight: 246),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(24),
-            child: Image.asset(
-              firstPet?.avatarPath ?? 'assets/seed/photos/yuanbao_headshot.png',
-              width: 72,
-              height: 72,
-              fit: BoxFit.cover,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            '元宝家庭',
-            style: TextStyle(
-              fontSize: AppUi.fontHeadline,
-              height: AppUi.lineHeight(AppUi.fontHeadline),
-              fontWeight: FontWeight.w700,
-              color: context.tokens.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '把每一只毛孩的日常都好好留下来。',
-            style: TextStyle(
-              fontSize: AppUi.fontCaption,
-              height: AppUi.lineHeight(AppUi.fontCaption),
-              color: context.tokens.textSecondary,
+          SizedBox(
+            width: double.infinity,
+            child: Column(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(32),
+                  child: Image.asset(
+                    firstPet?.avatarPath ??
+                        'assets/seed/photos/yuanbao_headshot.png',
+                    width: 64,
+                    height: 64,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '元宝家庭',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    height: 28 / 20,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF000000),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '把每一只毛孩的日常都好好留下来',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    height: 22 / 14,
+                    fontWeight: FontWeight.w400,
+                    color: Color(0xFF999999),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 16),
@@ -1518,7 +1561,9 @@ class _MineProfileCard extends StatelessWidget {
                 child: _MineStatItem(
                   label: '宠物',
                   value: '${pets.length}',
-                  icon: MingCuteIcons.paw,
+                  // 统计图标改成填充款，并使用更贴近 App 调性的柔和配色。
+                  icon: MingCuteIcons.pawFill,
+                  iconColor: const Color(0xFF5BA8C8),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1526,7 +1571,8 @@ class _MineProfileCard extends StatelessWidget {
                 child: _MineStatItem(
                   label: '照片',
                   value: '$photoCount',
-                  icon: MingCuteIcons.photoAlbum,
+                  icon: MingCuteIcons.pic2Fill,
+                  iconColor: const Color(0xFFD4826A),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1534,7 +1580,8 @@ class _MineProfileCard extends StatelessWidget {
                 child: _MineStatItem(
                   label: '短片',
                   value: '$videoCount',
-                  icon: MingCuteIcons.clapperboard,
+                  icon: MingCuteIcons.videoFill,
+                  iconColor: const Color(0xFF9B8AC4),
                 ),
               ),
             ],
@@ -1550,44 +1597,52 @@ class _MineStatItem extends StatelessWidget {
     required this.label,
     required this.value,
     required this.icon,
+    required this.iconColor,
   });
 
   final String label;
   final String value;
   final String icon;
+  final Color iconColor;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      height: 68,
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(AppUi.radiusCard),
+        color: const Color(0xFFF6F8FA),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          MingCuteIcon(
-            icon,
-            size: AppUi.iconMedium,
-            color: context.tokens.brand,
-          ),
-          const SizedBox(height: 8),
           Text(
             value,
-            style: TextStyle(
-              fontSize: AppUi.fontTitle,
-              height: AppUi.lineHeight(AppUi.fontTitle),
-              fontWeight: FontWeight.w700,
-              color: context.tokens.textPrimary,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 20,
+              height: 28 / 20,
+              fontWeight: FontWeight.w400,
+              color: Color(0xFF000000),
             ),
           ),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: AppUi.fontCaption,
-              height: AppUi.lineHeight(AppUi.fontCaption),
-              color: context.tokens.textSecondary,
-            ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              MingCuteIcon(icon, size: 16, color: iconColor),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  height: 20 / 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF999999),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -1621,43 +1676,24 @@ class _MineActionTile extends StatelessWidget {
         ),
         child: Row(
           children: [
-            CirclePlateIcon(
-              name: icon,
-              plateSize: 36,
-              iconSize: 20,
-              backgroundColor: const Color(0xFFF7F1EB),
-              iconColor: context.tokens.brand,
-            ),
+            // 我的页面入口图标统一收口为 20，并保持纯黑。
+            MingCuteIcon(icon, size: 20, color: const Color(0xFF000000)),
             const SizedBox(width: 12),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: AppUi.fontBody,
-                      height: AppUi.lineHeight(AppUi.fontBody),
-                      fontWeight: FontWeight.w700,
-                      color: context.tokens.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: AppUi.fontCaption,
-                      height: AppUi.lineHeight(AppUi.fontCaption),
-                      color: context.tokens.textSecondary,
-                    ),
-                  ),
-                ],
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  height: 24 / 16,
+                  fontWeight: FontWeight.w400,
+                  color: Color(0xFF000000),
+                ),
               ),
             ),
             MingCuteIcon(
-              MingCuteIcons.rightSmall,
-              size: AppUi.iconSmall,
-              color: context.tokens.textSecondary,
+              MingCuteIcons.rightLine,
+              size: 20,
+              color: const Color(0xFF999999),
             ),
           ],
         ),

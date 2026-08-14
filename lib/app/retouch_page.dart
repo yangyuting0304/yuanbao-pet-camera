@@ -2,7 +2,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_flutter/lucide_flutter.dart';
 import 'package:pet_camera/app/app_back_button.dart';
 import 'package:pet_camera/app/app_generated_result_page.dart';
 import 'package:pet_camera/app/app_horizontal_edge_inset.dart';
@@ -220,7 +219,11 @@ class _RetouchPageState extends ConsumerState<RetouchPage> {
       ),
       bottomNavigationBar: _activeTab == 4
           ? AppPrimaryActionIconBottomBar(
-              icon: LucideIcons.sparkles,
+              iconWidget: const MingCuteIcon(
+                MingCuteIcons.sparkles,
+                size: AppUi.iconSmall,
+                color: Colors.black,
+              ),
               label: '生成照片',
               onPressed: _selected == null
                   ? null
@@ -228,7 +231,11 @@ class _RetouchPageState extends ConsumerState<RetouchPage> {
               isLoading: _aiLoading,
             )
           : AppPrimaryActionIconBottomBar(
-              icon: LucideIcons.download,
+              iconWidget: const MingCuteIcon(
+                MingCuteIcons.download,
+                size: AppUi.iconSmall,
+                color: Colors.black,
+              ),
               label: '保存到相册',
               onPressed: _selected == null ? null : _save,
               isLoading: _saving,
@@ -504,11 +511,11 @@ class _ToolTabs extends StatelessWidget {
   final int active;
   final ValueChanged<int> onTap;
   static const _tabs = [
-    (LucideIcons.wand2, '滤镜'),
-    (LucideIcons.sticker, '贴纸'),
-    (LucideIcons.palette, '背景'),
-    (LucideIcons.square, '形状'),
-    (LucideIcons.sparkles, 'AI 编辑'),
+    (MingCuteIcons.magic3Line, '滤镜'),
+    (MingCuteIcons.pasterLine, '贴纸'),
+    (MingCuteIcons.backgroundLine, '背景'),
+    (MingCuteIcons.squareLine, '形状'),
+    (MingCuteIcons.aiLine, 'AI 编辑'),
   ];
   @override
   Widget build(BuildContext context) {
@@ -536,7 +543,7 @@ class _ToolTabs extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
+                    MingCuteIcon(
                       icon,
                       size: AppUi.iconSmall,
                       color: on ? t.textPrimary : t.textSecondary,
@@ -631,7 +638,11 @@ class _StickerPanel extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(LucideIcons.undo2, size: 32, color: context.tokens.error),
+                MingCuteIcon(
+                  MingCuteIcons.delete2,
+                  size: 24,
+                  color: context.tokens.error,
+                ),
                 const SizedBox(height: 8),
                 Text(
                   '清空',
@@ -696,8 +707,8 @@ class _BgPanel extends StatelessWidget {
                 ),
                 alignment: Alignment.center,
                 child: b.color == null
-                    ? Icon(
-                        LucideIcons.ban,
+                    ? MingCuteIcon(
+                        MingCuteIcons.forbidCircle,
                         size: AppUi.iconSmall,
                         color: context.tokens.textSecondary,
                       )
@@ -725,9 +736,9 @@ class _ShapePanel extends StatelessWidget {
   final int active;
   final ValueChanged<int> onSelect;
   static const _shapes = [
-    (LucideIcons.squareRoundCorner, '圆角'),
-    (LucideIcons.circle, '圆形'),
-    (LucideIcons.square, '方形'),
+    (MingCuteIcons.borderRadiusLine, '圆角'),
+    (MingCuteIcons.roundLine, '圆形'),
+    (MingCuteIcons.squareLine, '方形'),
   ];
   @override
   Widget build(BuildContext context) {
@@ -750,7 +761,7 @@ class _ShapePanel extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 32, color: Colors.black),
+              MingCuteIcon(icon, size: 24, color: Colors.black),
               const SizedBox(height: 8),
               Text(
                 label,
@@ -886,9 +897,7 @@ class _AiEditPanel extends StatelessWidget {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(AppUi.radiusCard),
-              borderSide: const BorderSide(
-                color: _RetouchPageState._secondaryOptionBorderColor,
-              ),
+              borderSide: const BorderSide(color: Color(0xFF000000)),
             ),
           ),
         ),

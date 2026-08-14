@@ -108,6 +108,16 @@ class PetCameraApp extends ConsumerWidget {
           disabledForegroundColor: tokens.textSecondary,
         ).copyWith(overlayColor: _appOverlayColor(tokens)),
       ),
+      inputDecorationTheme: InputDecorationTheme(
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppUi.radiusCard),
+          borderSide: const BorderSide(color: Color(0xFF000000)),
+        ),
+      ),
+      textSelectionTheme: const TextSelectionThemeData(
+        cursorColor: Color(0xFF000000),
+        selectionHandleColor: Color(0xFF000000),
+      ),
       segmentedButtonTheme: SegmentedButtonThemeData(
         style: ButtonStyle(
           backgroundColor: WidgetStateProperty.resolveWith((states) {

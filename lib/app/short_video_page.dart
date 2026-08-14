@@ -7,7 +7,6 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_flutter/lucide_flutter.dart';
 import 'package:pet_camera/app/app_back_button.dart';
 import 'package:pet_camera/app/app_primary_action_button.dart';
 import 'package:pet_camera/app/app_segmented_toggle.dart';
@@ -301,7 +300,7 @@ class _ShortVideoPageState extends ConsumerState<ShortVideoPage> {
                 height: 32,
                 child: Center(
                   child: MingCuteIcon(
-                    MingCuteIcons.film,
+                    MingCuteIcons.videoLine,
                     size: AppUi.iconMedium,
                     color: Colors.black,
                   ),
@@ -315,7 +314,7 @@ class _ShortVideoPageState extends ConsumerState<ShortVideoPage> {
           ? AppPrimaryActionIconBottomBar(
               label: '保存到短片库',
               iconWidget: const MingCuteIcon(
-                MingCuteIcons.film,
+                MingCuteIcons.videoLine,
                 size: AppUi.iconSmall,
                 color: Colors.black,
               ),
@@ -414,9 +413,9 @@ class ShortVideoLibraryPage extends ConsumerWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    LucideIcons.clapperboard,
-                    size: 48,
+                  MingCuteIcon(
+                    MingCuteIcons.clapperboardLine,
+                    size: 24,
                     color: t.textSecondary.withValues(alpha: 0.5),
                   ),
                   const SizedBox(height: 8),
@@ -523,10 +522,10 @@ class _VideoStage extends StatelessWidget {
                           color: Colors.black.withValues(alpha: 0.45),
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(
-                          playing ? LucideIcons.pause : LucideIcons.play,
-                          color: Colors.white,
+                        child: MingCuteIcon(
+                          playing ? MingCuteIcons.pause : MingCuteIcons.play,
                           size: AppUi.iconLarge,
+                          color: Colors.white,
                         ),
                       ),
                     ),
@@ -538,9 +537,9 @@ class _VideoStage extends StatelessWidget {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      LucideIcons.clapperboard,
-                      size: 28,
+                    MingCuteIcon(
+                      MingCuteIcons.clapperboardLine,
+                      size: 24,
                       color: context.tokens.textSecondary,
                     ),
                     const SizedBox(height: AppUi.space8),
@@ -720,7 +719,7 @@ class _CaptionRow extends StatelessWidget {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(AppUi.radiusCard),
-              borderSide: const BorderSide(color: _fieldBorderColor),
+              borderSide: const BorderSide(color: Color(0xFF000000)),
             ),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 12,
@@ -826,8 +825,8 @@ class _MusicRow extends StatelessWidget {
             ),
             child: Row(
               children: [
-                const Icon(
-                  LucideIcons.music,
+                const MingCuteIcon(
+                  MingCuteIcons.music,
                   size: AppUi.iconMedium,
                   color: Colors.black,
                 ),
@@ -867,7 +866,11 @@ class _LibrarySection extends ConsumerWidget {
         if (showHeader) ...[
           Row(
             children: [
-              Icon(LucideIcons.library, size: AppUi.iconMedium, color: t.brand),
+              MingCuteIcon(
+                MingCuteIcons.playlist,
+                size: AppUi.iconMedium,
+                color: t.brand,
+              ),
               const SizedBox(width: 8),
               Text(
                 '我的短片',
@@ -899,8 +902,8 @@ class _LibrarySection extends ConsumerWidget {
             ),
             child: Column(
               children: [
-                Icon(
-                  LucideIcons.clapperboard,
+                MingCuteIcon(
+                  MingCuteIcons.clapperboardLine,
                   size: AppUi.iconLarge,
                   color: t.textSecondary.withValues(alpha: 0.5),
                 ),
@@ -942,8 +945,8 @@ class _LibrarySection extends ConsumerWidget {
                           children: [
                             Container(color: Colors.black),
                             const Center(
-                              child: Icon(
-                                LucideIcons.playCircle,
+                              child: MingCuteIcon(
+                                MingCuteIcons.playCircle,
                                 size: AppUi.iconLarge,
                                 color: Colors.white70,
                               ),
@@ -1159,12 +1162,12 @@ class _PlaybackDialogState extends State<_PlaybackDialog> {
                                     color: Colors.black.withValues(alpha: 0.45),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: Icon(
+                                  child: MingCuteIcon(
                                     _playing
-                                        ? LucideIcons.pause
-                                        : LucideIcons.play,
-                                    color: Colors.white,
+                                        ? MingCuteIcons.pause
+                                        : MingCuteIcons.play,
                                     size: AppUi.iconLarge,
+                                    color: Colors.white,
                                   ),
                                 ),
                               ),

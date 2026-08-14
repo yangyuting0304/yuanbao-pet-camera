@@ -1,11 +1,14 @@
 import 'dart:async';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:camera/camera.dart';
 import 'package:video_player/video_player.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_flutter/lucide_flutter.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:pet_camera/app/app_generated_result_page.dart';
 import 'package:pet_camera/app/app_primary_action_button.dart';
 import 'package:pet_camera/app/app_photo_preview_panel.dart';
@@ -28,12 +31,14 @@ class _Shell extends StatelessWidget {
     required this.title,
     required this.body,
     this.backgroundColor,
+    this.appBarBackgroundColor,
     this.bottomBar,
   });
 
   final String title;
   final Widget body;
   final Color? backgroundColor;
+  final Color? appBarBackgroundColor;
   final Widget? bottomBar;
 
   @override
@@ -63,7 +68,7 @@ class _Shell extends StatelessWidget {
             fontWeight: FontWeight.w700,
           ),
         ),
-        backgroundColor: t.surface,
+        backgroundColor: appBarBackgroundColor ?? t.surface,
         foregroundColor: t.textPrimary,
         surfaceTintColor: Colors.transparent,
         shadowColor: Colors.transparent,
@@ -136,7 +141,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
 
                   // ===== 功能卡片网格（2列 + 足够高度显示完整文字） =====
                   _SectionHeader(
-                    icon: LucideIcons.sparkles,
+                    iconName: MingCuteIcons.sparkles,
                     title: '更多惊喜',
                     colorBlue: false,
                   ),
@@ -146,7 +151,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
 
                   // ===== 最近照片横滑 =====
                   _SectionHeader(
-                    icon: LucideIcons.images,
+                    iconName: MingCuteIcons.photoAlbum,
                     title: '毛孩近照',
                     colorBlue: true,
                   ),
@@ -190,10 +195,12 @@ class _OnboardingPageState extends State<OnboardingPage> {
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(AppUi.radiusCard),
                 ),
-                child: Icon(
-                  LucideIcons.camera,
-                  size: AppUi.iconMedium,
-                  color: const Color(0xFF2B2622),
+                child: const Center(
+                  child: MingCuteIcon(
+                    MingCuteIcons.camera,
+                    size: AppUi.iconMedium,
+                    color: Color(0xFF2B2622),
+                  ),
                 ),
               ),
             ),
@@ -223,10 +230,13 @@ class _OnboardingPageState extends State<OnboardingPage> {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(AppUi.radiusCard),
               ),
-              child: Icon(
-                LucideIcons.plus,
-                size: AppUi.iconMedium,
-                color: const Color(0xFF2B2622),
+              child: const Center(
+                // 这里实际跳转的是设置页，图标统一用 MingCute 设置图标。
+                child: MingCuteIcon(
+                  MingCuteIcons.settings2Line,
+                  size: AppUi.iconMedium,
+                  color: Color(0xFF2B2622),
+                ),
               ),
             ),
           ),
@@ -380,10 +390,12 @@ class _SnapshotCard extends StatelessWidget {
                         width: 1.5,
                       ),
                     ),
-                    child: const Icon(
-                      LucideIcons.camera,
-                      size: AppUi.iconSmall,
-                      color: Colors.white,
+                    child: const Center(
+                      child: MingCuteIcon(
+                        MingCuteIcons.camera,
+                        size: AppUi.iconSmall,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                 ),
@@ -399,11 +411,11 @@ class _SnapshotCard extends StatelessWidget {
 /// 分区标题（图标 + 文字，马卡龙配色：柔蓝 / 柔紫交替）
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({
-    required this.icon,
+    required this.iconName,
     required this.title,
     this.colorBlue = true,
   });
-  final IconData icon;
+  final String iconName;
   final String title;
 
   /// true=柔蓝(参考 Explore), false=柔紫(参考 Discover/Collections)
@@ -429,7 +441,13 @@ class _SectionHeader extends StatelessWidget {
               color: iconBg,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, size: AppUi.iconMedium, color: iconColor),
+            child: Center(
+              child: MingCuteIcon(
+                iconName,
+                size: AppUi.iconMedium,
+                color: iconColor,
+              ),
+            ),
           ),
           const SizedBox(width: 12),
           Text(
@@ -542,25 +560,25 @@ class _HeroBannerCard extends StatelessWidget {
 /// 功能卡片数据（照片和功能语义匹配 + 各宠物混合展示）
 const _featureCards = [
   _FeatCardData(
-    icon: LucideIcons.wand2,
+    iconName: MingCuteIcons.magic2,
     title: '毛孩写真',
     desc: 'AI生成油画、插画等多种艺术风格肖像。',
     tag: 'AI 驱动',
     assetPath: 'assets/seed/photos/feat_portrait.jpg', // ★ 金元宝9宫格写真
     route: '/portrait',
-    align: const Alignment(0.0, -0.1), // 写真构图居中
+    align: Alignment(0.0, -0.1), // 写真构图居中
   ),
   _FeatCardData(
-    icon: LucideIcons.image,
+    iconName: MingCuteIcons.photoAlbum,
     title: '毛孩相册',
     desc: '自动按宠物归类，瀑布流浏览所有照片。',
     tag: '201 张照片',
     assetPath: 'assets/seed/photos/feat_album.jpg', // ★ 春春江江4小奶猫
     route: '/album',
-    align: const Alignment(0.0, -0.3),
+    align: Alignment(0.0, -0.3),
   ),
   _FeatCardData(
-    icon: LucideIcons.clapperboard,
+    iconName: MingCuteIcons.videoLine,
     title: '一键成片',
     desc: '选几张照片，AI自动配乐剪辑成短视频。',
     tag: '视频',
@@ -568,41 +586,41 @@ const _featureCards = [
     videoAssetPath:
         'assets/seed/photos/feat_video_compressed.mp4', // ★ 压缩版(0.82MB,云端秒加载)
     route: '/short-video',
-    align: const Alignment(0.5, 0.15), // ★ 焦点下移（避免顶部杯子/空白过多）
+    align: Alignment(0.5, 0.15), // ★ 焦点下移（避免顶部杯子/空白过多）
   ),
   _FeatCardData(
-    icon: LucideIcons.sparkles,
+    iconName: MingCuteIcons.palette,
     title: '毛孩美颜',
     desc: '智能抠图换背景，叠加海量趣味贴纸。',
     tag: '已上线',
     assetPath: 'assets/seed/photos/feat_retouch.jpg', // ★ 布偶猫蓝眼睛(木头)
     route: '/retouch',
-    align: const Alignment(0.0, -0.25),
+    align: Alignment(0.0, -0.25),
   ),
   _FeatCardData(
-    icon: LucideIcons.heart,
+    iconName: MingCuteIcons.book,
     title: '成长手记',
     desc: '记录体重、疫苗、趣事与每个成长细节。',
     tag: '4 只宠物',
     assetPath: 'assets/seed/photos/feat_profile.jpg', // ★ 兽医体检
     route: '/pet-profile',
-    align: const Alignment(0.0, -0.2),
+    align: Alignment(0.0, -0.2),
   ),
   _FeatCardData(
-    icon: LucideIcons.camera,
+    iconName: MingCuteIcons.camera,
     title: '灵动快门',
     desc: '全屏取景+防抖算法，精准抓拍灵动瞬间。',
     tag: '已接入',
     assetPath: 'assets/seed/photos/feat_camera.jpg', // ★ 戴圈金毛(小凳子)
     route: '/camera',
-    align: const Alignment(0.0, -0.15),
+    align: Alignment(0.0, -0.15),
   ),
 ];
 
 /// 功能卡片数据模型
 class _FeatCardData {
   const _FeatCardData({
-    required this.icon,
+    required this.iconName,
     required this.title,
     required this.desc,
     required this.tag,
@@ -611,7 +629,7 @@ class _FeatCardData {
     this.align = const Alignment(0.0, -0.2), // 默认偏上保猫脸
     this.videoAssetPath, // 视频资源路径（非空时显示播放按钮）
   });
-  final IconData icon;
+  final String iconName;
   final String title;
   final String desc;
   final String tag;
@@ -727,9 +745,9 @@ class _ImageFeatCard extends StatelessWidget {
                                 )
                               : null,
                         ),
-                        child: Icon(
-                          data.icon,
-                          size: isFeatured ? 15 : 13,
+                        child: MingCuteIcon(
+                          data.iconName,
+                          size: isFeatured ? 16 : 14,
                           color: colors.icon,
                         ),
                       ),
@@ -983,8 +1001,8 @@ class _AutoPlayVideoCardState extends State<_AutoPlayVideoCard> {
                                 width: 2.5,
                               ),
                             ),
-                            child: Icon(
-                              LucideIcons.play,
+                            child: const MingCuteIcon(
+                              MingCuteIcons.play,
                               size: AppUi.iconMedium,
                               color: Colors.white,
                             ),
@@ -1001,8 +1019,8 @@ class _AutoPlayVideoCardState extends State<_AutoPlayVideoCard> {
                             color: colors.bg,
                             shape: BoxShape.circle,
                           ),
-                          child: Icon(
-                            widget.data.icon,
+                          child: MingCuteIcon(
+                            widget.data.iconName,
                             size: AppUi.iconSmall,
                             color: colors.icon,
                           ),
@@ -1187,13 +1205,6 @@ class _InsBottomNav extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
 
-  static const _navItems = [
-    (icon: LucideIcons.home, label: '首页'),
-    (icon: LucideIcons.image, label: '相册'),
-    // index 2 = FAB center
-    (icon: LucideIcons.user, label: '我的'),
-  ];
-
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -1207,14 +1218,14 @@ class _InsBottomNav extends StatelessWidget {
             children: [
               // 左侧：首页
               _NavItem(
-                icon: LucideIcons.home,
+                iconName: MingCuteIcons.home1,
                 label: '首页',
                 active: currentIndex == 0,
                 onTap: () => onTap(0),
               ),
               // 相册
               _NavItem(
-                icon: LucideIcons.image,
+                iconName: MingCuteIcons.photoAlbum,
                 label: '相册',
                 active: currentIndex == 1,
                 onTap: () => onTap(1),
@@ -1231,10 +1242,12 @@ class _InsBottomNav extends StatelessWidget {
                     color: const Color(0xFFFFA950), // 马卡龙橙（参考截图的 + 按钮）
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
-                    LucideIcons.camera,
-                    size: AppUi.iconMedium,
-                    color: Colors.white,
+                  child: const Center(
+                    child: MingCuteIcon(
+                      MingCuteIcons.camera,
+                      size: AppUi.iconMedium,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ),
@@ -1242,7 +1255,7 @@ class _InsBottomNav extends StatelessWidget {
 
               // 右侧：我的
               _NavItem(
-                icon: LucideIcons.user,
+                iconName: MingCuteIcons.user1,
                 label: '我的',
                 active: currentIndex == 3,
                 onTap: () => onTap(3),
@@ -1258,12 +1271,12 @@ class _InsBottomNav extends StatelessWidget {
 /// 单个导航项（马卡龙：活跃=薰衣草紫，非活跃=灰）
 class _NavItem extends StatelessWidget {
   const _NavItem({
-    required this.icon,
+    required this.iconName,
     required this.label,
     required this.active,
     required this.onTap,
   });
-  final IconData icon;
+  final String iconName;
   final String label;
   final bool active;
   final VoidCallback onTap;
@@ -1283,7 +1296,7 @@ class _NavItem extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: AppUi.iconMedium, color: color),
+              MingCuteIcon(iconName, size: AppUi.iconMedium, color: color),
               const SizedBox(height: 3),
               Text(
                 label,
@@ -1321,6 +1334,9 @@ class CameraPage extends ConsumerStatefulWidget {
 /// Web 端使用 camera_web（getUserMedia，需 localhost/https 授权）；Android 端原生相机。
 class _CameraPageState extends ConsumerState<CameraPage> {
   static const Duration _cameraInitTimeout = Duration(seconds: 10);
+  // UI 按常见相机文案展示 4:3 / 16:9，内部仍按竖屏预览比例计算。
+  static const List<String> _photoRatioLabels = ['原图', '1:1', '4:3', '16:9'];
+  static const List<double?> _photoRatioValues = [null, 1.0, 3 / 4, 9 / 16];
   List<CameraDescription> _cameras = <CameraDescription>[];
   CameraController? _controller;
   bool _isInitialized = false;
@@ -1328,6 +1344,9 @@ class _CameraPageState extends ConsumerState<CameraPage> {
   bool _flashOn = false;
   int _cameraIndex = 0;
   int _modeIndex = 0; // 0=拍照 1=视频 2=宠物
+  bool _showPetGuide = true; // 宠物模式下默认显示取景辅助框
+  int _photoRatioIndex = 0; // 0=原图 1=1:1 2=3:4 3=9:16
+  bool _showGridGuide = false; // 参考线使用经典 3x3 构图线
   static const _modes = ['拍照', '视频', '宠物'];
   bool _captured = false;
   Uint8List? _lastBytes;
@@ -1347,10 +1366,7 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         setState(() => _error = '未检测到可用摄像头');
         return;
       }
-      _cameraIndex = _cameras.indexWhere(
-        (c) => c.lensDirection == CameraLensDirection.back,
-      );
-      if (_cameraIndex < 0) _cameraIndex = 0;
+      _cameraIndex = _findCameraIndex(CameraLensDirection.back);
       await _setupController(_cameras[_cameraIndex]);
     } on TimeoutException {
       setState(() => _error = '相机加载超时，请检查浏览器相机权限后重试');
@@ -1363,7 +1379,7 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     CameraDescription desc, {
     bool enableAudio = false,
   }) async {
-    _controller?.dispose();
+    final previousController = _controller;
     _recording = false;
     CameraController? c;
     try {
@@ -1373,6 +1389,11 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         enableAudio: enableAudio,
       );
       await c.initialize().timeout(_cameraInitTimeout);
+      if (_flashOn) {
+        try {
+          await c.setFlashMode(FlashMode.torch);
+        } catch (_) {}
+      }
     } catch (e) {
       if (enableAudio) {
         // 部分浏览器/设备 getUserMedia 不支持音频轨，降级为无声视频录制
@@ -1383,6 +1404,11 @@ class _CameraPageState extends ConsumerState<CameraPage> {
             enableAudio: false,
           );
           await c.initialize().timeout(_cameraInitTimeout);
+          if (_flashOn) {
+            try {
+              await c.setFlashMode(FlashMode.torch);
+            } catch (_) {}
+          }
           _audioUnsupported = true;
         } catch (e2) {
           if (mounted) {
@@ -1405,8 +1431,22 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         return;
       }
     }
-    _controller = c!;
+    _controller = c;
+    previousController?.dispose();
     if (mounted) setState(() => _isInitialized = true);
+  }
+
+  /// 根据镜头方向找到最合适的摄像头。
+  int _findCameraIndex(CameraLensDirection direction) {
+    final preferredIndex = _cameras.indexWhere(
+      (camera) => camera.lensDirection == direction,
+    );
+    if (preferredIndex >= 0) return preferredIndex;
+    final backIndex = _cameras.indexWhere(
+      (camera) => camera.lensDirection == CameraLensDirection.back,
+    );
+    if (backIndex >= 0) return backIndex;
+    return 0;
   }
 
   Future<void> _toggleFlash() async {
@@ -1423,11 +1463,16 @@ class _CameraPageState extends ConsumerState<CameraPage> {
   Future<void> _switchLens() async {
     if (_cameras.length < 2 || _recording) return;
     _cameraIndex = (_cameraIndex + 1) % _cameras.length;
-    setState(() => _isInitialized = false);
     await _setupController(
       _cameras[_cameraIndex],
       enableAudio: _modeIndex == 1,
     );
+  }
+
+  void _cyclePhotoRatio() {
+    setState(() {
+      _photoRatioIndex = (_photoRatioIndex + 1) % _photoRatioLabels.length;
+    });
   }
 
   Future<void> _capture() async {
@@ -1436,9 +1481,17 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       await _toggleRecording();
       return;
     }
+    await _takePicture();
+  }
+
+  /// 拍照并在保存前按设置的比例生成最终成片。
+  /// 比例外区域补纯黑，避免直接裁掉原图内容。
+  Future<void> _takePicture() async {
+    if (_controller == null || !_isInitialized) return;
     try {
       final x = await _controller!.takePicture();
-      final bytes = await x.readAsBytes();
+      final rawBytes = await x.readAsBytes();
+      final bytes = await _composePhotoToSelectedRatio(rawBytes);
       ref.read(capturedPhotosProvider.notifier).add(bytes);
       setState(() {
         _captured = true;
@@ -1452,6 +1505,63 @@ class _CameraPageState extends ConsumerState<CameraPage> {
           context,
         ).showSnackBar(SnackBar(content: Text('拍照失败：$e')));
       }
+    }
+  }
+
+  /// 按当前照片比例输出带黑边的成片。
+  /// 这里保留原图完整内容，只在比例外补纯黑区域。
+  Future<Uint8List> _composePhotoToSelectedRatio(Uint8List bytes) async {
+    final targetRatio = _photoRatioValues[_photoRatioIndex];
+    try {
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      final image = frame.image;
+      final sourceWidth = image.width.toDouble();
+      final sourceHeight = image.height.toDouble();
+      if (targetRatio == null) return bytes;
+
+      // 按用户要求：目标宽高由原图宽或高的最大值来定。
+      final maxSide = math.max(sourceWidth, sourceHeight);
+      late final int outputWidth;
+      late final int outputHeight;
+      if (targetRatio >= 1) {
+        outputWidth = maxSide.round();
+        outputHeight = (maxSide / targetRatio).round();
+      } else {
+        outputHeight = maxSide.round();
+        outputWidth = (maxSide * targetRatio).round();
+      }
+
+      // 使用 contain 方式完整放下原图，剩余区域用纯黑补齐。
+      final scale = math.min(
+        outputWidth / sourceWidth,
+        outputHeight / sourceHeight,
+      );
+      final drawWidth = sourceWidth * scale;
+      final drawHeight = sourceHeight * scale;
+      final offsetX = (outputWidth - drawWidth) / 2;
+      final offsetY = (outputHeight - drawHeight) / 2;
+
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, outputWidth.toDouble(), outputHeight.toDouble()),
+        Paint()..color = const Color(0xFF000000),
+      );
+      canvas.drawImageRect(
+        image,
+        Rect.fromLTWH(0, 0, sourceWidth, sourceHeight),
+        Rect.fromLTWH(offsetX, offsetY, drawWidth, drawHeight),
+        Paint(),
+      );
+      final picture = recorder.endRecording();
+      final outputImage = await picture.toImage(outputWidth, outputHeight);
+      final byteData = await outputImage.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
+      return byteData?.buffer.asUint8List() ?? bytes;
+    } catch (_) {
+      return bytes;
     }
   }
 
@@ -1510,10 +1620,135 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     if (i == _modeIndex || _recording || _cameras.isEmpty) return;
     setState(() {
       _modeIndex = i;
-      _isInitialized = false;
       _audioUnsupported = false;
     });
     await _setupController(_cameras[_cameraIndex], enableAudio: i == 1);
+  }
+
+  void _showCameraSettingsSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, sheetSetState) {
+            void refreshSheet(void Function() action) {
+              setState(action);
+              sheetSetState(() {});
+            }
+
+            Future<void> refreshSheetAsync(
+              Future<void> Function() action,
+            ) async {
+              await action();
+              if (!mounted) return;
+              sheetSetState(() {});
+            }
+
+            return SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Container(
+                  // 相机设置弹窗改成内容自适应高度，避免继续撑满整屏。
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 36,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE2E4E6),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        '相机设置',
+                        style: TextStyle(
+                          fontSize: 20,
+                          height: 28 / 20,
+                          fontWeight: FontWeight.w400,
+                          color: Color(0xFF000000),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _CameraSettingSection(
+                        title: '拍摄参数',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                final itemWidth =
+                                    (constraints.maxWidth - 8) / 2;
+                                return Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: List.generate(
+                                    _photoRatioLabels.length,
+                                    (index) => _CameraChoiceChip(
+                                      label: _photoRatioLabels[index],
+                                      width: itemWidth,
+                                      selected: index == _photoRatioIndex,
+                                      onTap: () => refreshSheet(
+                                        () => _photoRatioIndex = index,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            _CameraSwitchTile(
+                              title: '闪光灯',
+                              value: _flashOn ? '开启' : '关闭',
+                              onTap: () => refreshSheetAsync(_toggleFlash),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _CameraSettingSection(
+                        title: '辅助功能',
+                        child: Column(
+                          children: [
+                            _CameraSwitchTile(
+                              title: '参考线',
+                              value: _showGridGuide ? '显示' : '隐藏',
+                              onTap: () => refreshSheet(
+                                () => _showGridGuide = !_showGridGuide,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            _CameraSwitchTile(
+                              title: '宠物取景框',
+                              value: _showPetGuide ? '显示' : '隐藏',
+                              onTap: () => refreshSheet(
+                                () => _showPetGuide = !_showPetGuide,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -1530,38 +1765,7 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       body: Stack(
         children: [
           Positioned.fill(child: _buildPreview()),
-          if (_modeIndex == 2 && _isInitialized)
-            Center(
-              child: Container(
-                width: 220,
-                height: 280,
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.4),
-                    width: 1.5,
-                  ),
-                  borderRadius: BorderRadius.circular(AppUi.radiusCard),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    MingCuteIcon(
-                      MingCuteIcons.paw,
-                      size: AppUi.iconLarge,
-                      color: Colors.white.withValues(alpha: 0.5),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '宠物取景框',
-                      style: TextStyle(
-                        fontSize: AppUi.fontBody,
-                        color: Colors.white.withValues(alpha: 0.5),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+          if (_isInitialized) Positioned.fill(child: _buildCameraGuides()),
           if (_captured) Positioned.fill(child: Container(color: Colors.white)),
           if (_recording)
             Positioned(
@@ -1625,9 +1829,30 @@ class _CameraPageState extends ConsumerState<CameraPage> {
                   ),
                   const SizedBox(width: 20),
                   GestureDetector(
-                    onTap: () {},
+                    // 参考线直接放到外层，点击即可开关。
+                    onTap: () =>
+                        setState(() => _showGridGuide = !_showGridGuide),
+                    child: MingCuteIcon(
+                      MingCuteIcons.layoutGrid,
+                      size: AppUi.iconLarge,
+                      color: _showGridGuide ? t.brand : Colors.white,
+                    ),
+                  ),
+                  const SizedBox(width: 20),
+                  GestureDetector(
+                    onTap: _cyclePhotoRatio,
                     child: const MingCuteIcon(
-                      MingCuteIcons.settings2,
+                      MingCuteIcons.squareLine,
+                      color: Colors.white,
+                      size: AppUi.iconLarge,
+                    ),
+                  ),
+                  const SizedBox(width: 20),
+                  GestureDetector(
+                    // 相机页设置应打开相机功能设置，而不是跳到全局设置页。
+                    onTap: _showCameraSettingsSheet,
+                    child: const MingCuteIcon(
+                      MingCuteIcons.settings2Line,
                       color: Colors.white,
                       size: AppUi.iconLarge,
                     ),
@@ -1640,88 +1865,90 @@ class _CameraPageState extends ConsumerState<CameraPage> {
             alignment: Alignment.bottomCenter,
             child: SafeArea(
               child: Padding(
-                padding: const EdgeInsets.only(bottom: 24, left: 20, right: 20),
+                padding: const EdgeInsets.only(bottom: 24, left: 16, right: 16),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: List.generate(_modes.length, (i) {
-                          final active = i == _modeIndex;
-                          return GestureDetector(
-                            onTap: _recording ? null : () => _switchMode(i),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              margin: const EdgeInsets.symmetric(horizontal: 4),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: active ? t.brand : Colors.transparent,
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Text(
-                                _modes[i],
-                                style: TextStyle(
-                                  fontSize: AppUi.fontBody,
-                                  fontWeight: active
-                                      ? FontWeight.w700
-                                      : FontWeight.w400,
-                                  color: active
-                                      ? t.textPrimary
-                                      : Colors.white.withValues(alpha: 0.7),
+                    SizedBox(
+                      width: 188,
+                      height: 34,
+                      child: DecoratedBox(
+                        // 相机模式切换严格按用户给的 CSS：188x34、2px 内边距、黑色 20% 背景。
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(2),
+                          child: Row(
+                            children: List.generate(_modes.length, (i) {
+                              final active = i == _modeIndex;
+                              return Padding(
+                                padding: EdgeInsets.only(
+                                  right: i == _modes.length - 1 ? 0 : 2,
                                 ),
-                              ),
-                            ),
-                          );
-                        }),
+                                child: GestureDetector(
+                                  onTap: _recording
+                                      ? null
+                                      : () => _switchMode(i),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    width: 60,
+                                    height: 30,
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: active
+                                          ? const Color(0xFFFFEE35)
+                                          : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(24),
+                                    ),
+                                    child: Text(
+                                      _modes[i],
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        height: 22 / 14,
+                                        fontWeight: FontWeight.w400,
+                                        color: active
+                                            ? const Color(0xFF000000)
+                                            : const Color(0xFFFFFFFF),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }),
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 20),
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         GestureDetector(
                           onTap: () => Navigator.pushNamed(context, '/album'),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            width: 56,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.2),
+                              shape: BoxShape.circle,
+                            ),
                             child: _lastBytes != null
-                                ? Image.memory(
-                                    _lastBytes!,
-                                    width: 48,
-                                    height: 48,
-                                    fit: BoxFit.cover,
-                                  )
-                                : Container(
-                                    width: 48,
-                                    height: 48,
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withValues(
-                                        alpha: 0.1,
-                                      ),
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.2,
-                                        ),
-                                      ),
+                                ? ClipOval(
+                                    // 有最近照片时直接显示缩略图，不再显示相册图标。
+                                    child: Image.memory(
+                                      _lastBytes!,
+                                      width: 56,
+                                      height: 56,
+                                      fit: BoxFit.cover,
                                     ),
+                                  )
+                                : Center(
                                     child: MingCuteIcon(
-                                      MingCuteIcons.picLine,
-                                      size: AppUi.iconLarge,
-                                      color: Colors.white.withValues(
-                                        alpha: 0.4,
-                                      ),
+                                      MingCuteIcons.pic2Line,
+                                      size: 24,
+                                      color: Colors.white,
                                     ),
                                   ),
                           ),
@@ -1736,7 +1963,7 @@ class _CameraPageState extends ConsumerState<CameraPage> {
                               border: Border.all(
                                 color: _recording
                                     ? const Color(0xFFFF3B30)
-                                    : t.brand,
+                                    : Colors.white,
                                 width: 4,
                               ),
                             ),
@@ -1751,7 +1978,7 @@ class _CameraPageState extends ConsumerState<CameraPage> {
                                   ),
                                   color: _recording
                                       ? const Color(0xFFFF3B30)
-                                      : t.brand,
+                                      : Colors.white,
                                 ),
                               ),
                             ),
@@ -1760,18 +1987,18 @@ class _CameraPageState extends ConsumerState<CameraPage> {
                         GestureDetector(
                           onTap: _switchLens,
                           child: Container(
-                            width: 48,
-                            height: 48,
+                            width: 56,
+                            height: 56,
                             decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.2),
                               shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.3),
-                              ),
                             ),
-                            child: MingCuteIcon(
-                              MingCuteIcons.refresh2Line,
-                              size: AppUi.iconLarge,
-                              color: Colors.white.withValues(alpha: 0.8),
+                            child: Center(
+                              child: MingCuteIcon(
+                                MingCuteIcons.refresh2Line,
+                                size: 24,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
                         ),
@@ -1842,7 +2069,324 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         child: Center(child: CircularProgressIndicator(color: t.brand)),
       );
     }
-    return CameraPreview(_controller!);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final previewSize = _controller!.value.previewSize;
+        if (previewSize == null) {
+          return CameraPreview(_controller!);
+        }
+        final isViewportPortrait =
+            constraints.maxHeight >= constraints.maxWidth;
+        final isPreviewPortrait = previewSize.height >= previewSize.width;
+        // 只有当相机原始方向和屏幕方向不一致时才交换宽高，避免某些设备上把本来竖向的画面误当成横向处理。
+        final displayWidth = isViewportPortrait == isPreviewPortrait
+            ? previewSize.width
+            : previewSize.height;
+        final displayHeight = isViewportPortrait == isPreviewPortrait
+            ? previewSize.height
+            : previewSize.width;
+        // 这里改成按视口比例做 cover 缩放，直接把多余区域裁掉，
+        // 避免某些浏览器里 FittedBox 没有真正把 CameraPreview 铺满而露出黑边。
+        final viewportAspect = constraints.maxWidth / constraints.maxHeight;
+        final previewAspect = displayWidth / displayHeight;
+        var scale = previewAspect / viewportAspect;
+        if (scale < 1) {
+          scale = 1 / scale;
+        }
+        return ClipRect(
+          child: Transform.scale(
+            scale: scale,
+            alignment: Alignment.center,
+            child: Center(
+              child: SizedBox(
+                width: displayWidth,
+                height: displayHeight,
+                child: CameraPreview(_controller!),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 统一在取景层叠加照片比例框、参考线和宠物取景框。
+  Widget _buildCameraGuides() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final viewport = Size(constraints.maxWidth, constraints.maxHeight);
+        final frame = _resolveGuideFrame(viewport);
+        final hasRatioMask = _photoRatioValues[_photoRatioIndex] != null;
+        return IgnorePointer(
+          child: Stack(
+            children: [
+              if (hasRatioMask)
+                Positioned.fill(
+                  // 非原图比例时，用纯黑蒙版遮住比例外区域，中间比例区保持完全透明。
+                  child: CustomPaint(
+                    painter: _CameraRatioMaskPainter(frameRect: frame),
+                  ),
+                ),
+              if (_showGridGuide)
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _CameraGridPainter(frameRect: frame),
+                  ),
+                ),
+              if (_modeIndex == 2 && _showPetGuide)
+                Positioned.fromRect(
+                  rect: frame,
+                  child: Center(
+                    child: Container(
+                      width: 220,
+                      height: 280,
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.4),
+                          width: 1.5,
+                        ),
+                        borderRadius: BorderRadius.circular(AppUi.radiusCard),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          MingCuteIcon(
+                            MingCuteIcons.paw,
+                            size: AppUi.iconLarge,
+                            color: Colors.white.withValues(alpha: 0.5),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '宠物取景框',
+                            style: TextStyle(
+                              fontSize: AppUi.fontBody,
+                              color: Colors.white.withValues(alpha: 0.5),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// 计算比例框在当前取景区域里的最大可用区域，避免压住上下操作区。
+  Rect _resolveGuideFrame(Size viewport) {
+    final targetRatio = _photoRatioValues[_photoRatioIndex];
+    final padding = MediaQuery.paddingOf(context);
+    final availableWidth = viewport.width;
+    final availableHeight = math.max(
+      0.0,
+      viewport.height - padding.top - padding.bottom,
+    );
+    if (targetRatio == null) {
+      return Rect.fromLTWH(0, padding.top, availableWidth, availableHeight);
+    }
+
+    final heightByWidth = availableWidth / targetRatio;
+    final useWidth = heightByWidth <= availableHeight;
+    final frameWidth = useWidth
+        ? availableWidth
+        : availableHeight * targetRatio;
+    final frameHeight = useWidth ? heightByWidth : availableHeight;
+    return Rect.fromLTWH(
+      (viewport.width - frameWidth) / 2,
+      padding.top + ((availableHeight - frameHeight) / 2),
+      frameWidth,
+      frameHeight,
+    );
+  }
+}
+
+class _CameraSettingSection extends StatelessWidget {
+  const _CameraSettingSection({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 14,
+            height: 22 / 14,
+            fontWeight: FontWeight.w400,
+            color: Color(0xFF000000),
+          ),
+        ),
+        const SizedBox(height: 12),
+        child,
+      ],
+    );
+  }
+}
+
+class _CameraChoiceChip extends StatelessWidget {
+  const _CameraChoiceChip({
+    required this.label,
+    this.width,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final double? width;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: width,
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: t.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: selected ? t.brand : const Color(0xFFE2E4E6),
+            width: 1,
+          ),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 14,
+            height: 22 / 14,
+            fontWeight: FontWeight.w400,
+            color: selected ? const Color(0xFF000000) : const Color(0xFF666666),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CameraSwitchTile extends StatelessWidget {
+  const _CameraSwitchTile({
+    required this.title,
+    required this.value,
+    required this.onTap,
+  });
+
+  final String title;
+  final String value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 48,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF6F8FA),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 14,
+                  height: 22 / 14,
+                  fontWeight: FontWeight.w400,
+                  color: Color(0xFF000000),
+                ),
+              ),
+            ),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 14,
+                height: 22 / 14,
+                fontWeight: FontWeight.w400,
+                color: Color(0xFF999999),
+              ),
+            ),
+            const SizedBox(width: 8),
+            const MingCuteIcon(
+              MingCuteIcons.rightLine,
+              size: 20,
+              color: Color(0xFF999999),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 参考线只画在可用取景区里，避免压到顶部导航和底部按钮。
+class _CameraGridPainter extends CustomPainter {
+  const _CameraGridPainter({required this.frameRect});
+
+  final Rect frameRect;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.22)
+      ..strokeWidth = 1;
+
+    final thirdWidth = frameRect.width / 3;
+    final thirdHeight = frameRect.height / 3;
+
+    for (var i = 1; i <= 2; i++) {
+      final dx = frameRect.left + (thirdWidth * i);
+      canvas.drawLine(
+        Offset(dx, frameRect.top),
+        Offset(dx, frameRect.bottom),
+        paint,
+      );
+      final dy = frameRect.top + (thirdHeight * i);
+      canvas.drawLine(
+        Offset(frameRect.left, dy),
+        Offset(frameRect.right, dy),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CameraGridPainter oldDelegate) {
+    return oldDelegate.frameRect != frameRect;
+  }
+}
+
+/// 比例外区域用纯黑遮罩，取景时就能看到最终成片范围。
+class _CameraRatioMaskPainter extends CustomPainter {
+  const _CameraRatioMaskPainter({required this.frameRect});
+
+  final Rect frameRect;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRect(Offset.zero & size)
+      ..addRect(frameRect);
+    canvas.drawPath(path, Paint()..color = const Color(0xFF000000));
+  }
+
+  @override
+  bool shouldRepaint(covariant _CameraRatioMaskPainter oldDelegate) {
+    return oldDelegate.frameRect != frameRect;
   }
 }
 
@@ -2064,14 +2608,14 @@ class _PortraitPageState extends ConsumerState<PortraitPage> {
         const SizedBox(height: 20),
         if (_generating)
           _ResultPlaceholder(
-            icon: LucideIcons.loader,
+            iconName: MingCuteIcons.loading,
             text: 'AI 正在创作中…',
             spinning: true,
             t: t,
           )
         else if (_error != null)
           _ResultPlaceholder(
-            icon: LucideIcons.alertTriangle,
+            iconName: MingCuteIcons.warning,
             text: _error!,
             t: t,
           ),
@@ -2416,13 +2960,9 @@ class _PortraitAlbumPickerPageState extends State<_PortraitAlbumPickerPage> {
                   AppUi.pagePadding,
                   AppUi.space12,
                 ),
-                child: Text(
-                  key,
-                  style: TextStyle(
-                    fontSize: AppUi.fontTitle,
-                    fontWeight: FontWeight.w700,
-                    color: context.tokens.textPrimary,
-                  ),
+                child: _AlbumTimeHeaderCard(
+                  date: groups[key]!.first.takenAt,
+                  count: groups[key]!.length,
                 ),
               ),
             ),
@@ -2495,12 +3035,12 @@ class _PortraitSquareGridSliver extends StatelessWidget {
 /// AI 写真结果区占位（加载/错误/空态）。
 class _ResultPlaceholder extends StatelessWidget {
   const _ResultPlaceholder({
-    required this.icon,
+    required this.iconName,
     required this.text,
     required this.t,
     this.spinning = false,
   });
-  final IconData icon;
+  final String iconName;
   final String text;
   final AppTokens t;
   final bool spinning;
@@ -2521,7 +3061,11 @@ class _ResultPlaceholder extends StatelessWidget {
                     color: t.brand,
                   ),
                 )
-              : Icon(icon, size: AppUi.iconLarge, color: t.textSecondary),
+              : MingCuteIcon(
+                  iconName,
+                  size: AppUi.iconLarge,
+                  color: t.textSecondary,
+                ),
           const SizedBox(height: 12),
           Text(
             text,
@@ -2923,35 +3467,15 @@ class _AlbumViewState extends State<_AlbumView> {
           slivers: [
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 16, 8),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 4,
-                      height: 18,
-                      decoration: BoxDecoration(
-                        color: context.tokens.brand,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      key,
-                      style: TextStyle(
-                        fontSize: AppUi.fontTitle,
-                        fontWeight: FontWeight.w700,
-                        color: context.tokens.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '${groups[key]!.length}张',
-                      style: TextStyle(
-                        fontSize: AppUi.fontBody,
-                        color: context.tokens.textSecondary,
-                      ),
-                    ),
-                  ],
+                padding: const EdgeInsets.fromLTRB(
+                  AppUi.pagePadding,
+                  AppUi.space32,
+                  AppUi.pagePadding,
+                  AppUi.space12,
+                ),
+                child: _AlbumTimeHeaderCard(
+                  date: groups[key]!.first.takenAt,
+                  count: groups[key]!.length,
                 ),
               ),
             ),
@@ -2964,6 +3488,77 @@ class _AlbumViewState extends State<_AlbumView> {
           ],
         ),
     ];
+  }
+}
+
+/// 相册按时间分组头部卡片。
+/// 左侧展示“8月 + 2026年”，右侧展示图片图标和数量，统一复用同一套样式。
+class _AlbumTimeHeaderCard extends StatelessWidget {
+  const _AlbumTimeHeaderCard({required this.date, required this.count});
+
+  final DateTime date;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 72,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF6F8FA),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                '${date.month}月',
+                style: const TextStyle(
+                  fontSize: 16,
+                  height: 24 / 16,
+                  fontWeight: FontWeight.w400,
+                  color: Color(0xFF000000),
+                ),
+              ),
+              Text(
+                '${date.year}年',
+                style: const TextStyle(
+                  fontSize: 12,
+                  height: 20 / 12,
+                  fontWeight: FontWeight.w400,
+                  color: Color(0xFF999999),
+                ),
+              ),
+            ],
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const MingCuteIcon(
+                MingCuteIcons.picFill,
+                size: 24,
+                color: Color(0xFF999999),
+              ),
+              Text(
+                '$count 张',
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  fontSize: 12,
+                  height: 20 / 12,
+                  fontWeight: FontWeight.w400,
+                  color: Color(0xFF999999),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -3075,6 +3670,7 @@ class _PetFilterAvatarTile extends StatelessWidget {
         width: 64,
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: <Widget>[
             Container(
               width: 64,
@@ -3329,7 +3925,7 @@ class _PetProfileHeader extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(LucideIcons.image, size: 15, color: t.brand),
+                MingCuteIcon(MingCuteIcons.picLine, size: 16, color: t.brand),
                 const SizedBox(width: 4),
                 Text(
                   '$count',
@@ -3349,36 +3945,6 @@ class _PetProfileHeader extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _StatChip extends StatelessWidget {
-  const _StatChip({required this.value, required this.label});
-  final String value;
-  final String label;
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: AppUi.fontBody,
-            fontWeight: FontWeight.w700,
-            color: context.tokens.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 1),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: AppUi.fontCaption,
-            color: context.tokens.textSecondary,
-          ),
-        ),
-      ],
     );
   }
 }
@@ -3412,21 +3978,24 @@ class _MasonryGridState extends State<_MasonryGrid> {
   @override
   Widget build(BuildContext context) {
     final items = widget.items;
-    if (items.isEmpty)
+    if (items.isEmpty) {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
 
     // 分成左右两列
     final leftItems = <int>[];
     final rightItems = <int>[];
     for (var i = 0; i < items.length; i++) {
-      if (i.isEven)
+      if (i.isEven) {
         leftItems.add(i);
-      else
+      } else {
         rightItems.add(i);
+      }
     }
 
-    return SliverFillRemaining(
-      hasScrollBody: false,
+    return SliverToBoxAdapter(
+      // 这里不能用 SliverFillRemaining，否则每个时间分组都会把剩余视口撑满，
+      // 导致分组末尾出现大块空白。
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -3572,6 +4141,7 @@ class PetProfilePage extends ConsumerStatefulWidget {
 
 class _PetProfilePageState extends ConsumerState<PetProfilePage> {
   String? _selectedPetId;
+  bool _isPetListExpanded = true;
 
   @override
   Widget build(BuildContext context) {
@@ -3579,6 +4149,7 @@ class _PetProfilePageState extends ConsumerState<PetProfilePage> {
     final petsAsync = ref.watch(petsProvider);
     return _Shell(
       title: '成长手记',
+      appBarBackgroundColor: const Color(0xFFF6F8FA),
       body: petsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('加载失败：$e')),
@@ -3600,7 +4171,10 @@ class _PetProfilePageState extends ConsumerState<PetProfilePage> {
                 _PetSwitch(
                   pets: pets,
                   selectedId: pet.id,
+                  expanded: _isPetListExpanded,
                   onSelect: (id) => setState(() => _selectedPetId = id),
+                  onToggleExpanded: () =>
+                      setState(() => _isPetListExpanded = !_isPetListExpanded),
                 ),
                 const SizedBox(height: 16),
                 _PetHeaderCard(
@@ -3611,16 +4185,15 @@ class _PetProfilePageState extends ConsumerState<PetProfilePage> {
                     orElse: () => 0,
                   ),
                 ),
-                const SizedBox(height: 20),
-                _buildAddButtons(context, pet.id),
                 const SizedBox(height: 24),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: Text(
                     '成长时间线',
                     style: TextStyle(
-                      fontSize: AppUi.fontTitle,
-                      fontWeight: FontWeight.w700,
+                      fontSize: 20,
+                      height: 28 / 20,
+                      fontWeight: FontWeight.w400,
                       color: t.textPrimary,
                     ),
                   ),
@@ -3629,13 +4202,45 @@ class _PetProfilePageState extends ConsumerState<PetProfilePage> {
                 if (records.isEmpty)
                   const _EmptyTimeline()
                 else
-                  ...records.map(
-                    (r) => _TimelineItem(
-                      record: r,
-                      onDelete: () => ref
-                          .read(growthRecordsMutationProvider)
-                          .remove(pet.id, r.id),
-                    ),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      const cardGap = 12.0;
+                      final cardWidth = (constraints.maxWidth - cardGap) / 2;
+                      final orderedRecords = [...records]
+                        ..sort((a, b) {
+                          const order = <GrowthType, int>{
+                            GrowthType.weight: 0,
+                            GrowthType.note: 1,
+                            GrowthType.vaccine: 2,
+                          };
+                          final typeCompare = (order[a.type] ?? 99).compareTo(
+                            order[b.type] ?? 99,
+                          );
+                          if (typeCompare != 0) {
+                            return typeCompare;
+                          }
+                          return b.date.compareTo(a.date);
+                        });
+                      return Wrap(
+                        spacing: cardGap,
+                        runSpacing: cardGap,
+                        children: orderedRecords
+                            .map(
+                              (r) => SizedBox(
+                                width: cardWidth,
+                                child: _TimelineItem(
+                                  record: r,
+                                  onAdd: () =>
+                                      _showAddSheet(context, pet.id, r.type),
+                                  onDelete: () => ref
+                                      .read(growthRecordsMutationProvider)
+                                      .remove(pet.id, r.id),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      );
+                    },
                   ),
                 const SizedBox(height: 24),
               ],
@@ -3643,33 +4248,6 @@ class _PetProfilePageState extends ConsumerState<PetProfilePage> {
           );
         },
       ),
-    );
-  }
-
-  Widget _buildAddButtons(BuildContext context, String petId) {
-    return Row(
-      children: [
-        Expanded(
-          child: _AddButton(
-            type: GrowthType.weight,
-            onTap: () => _showAddSheet(context, petId, GrowthType.weight),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _AddButton(
-            type: GrowthType.vaccine,
-            onTap: () => _showAddSheet(context, petId, GrowthType.vaccine),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _AddButton(
-            type: GrowthType.note,
-            onTap: () => _showAddSheet(context, petId, GrowthType.note),
-          ),
-        ),
-      ],
     );
   }
 
@@ -3689,35 +4267,96 @@ class _PetProfilePageState extends ConsumerState<PetProfilePage> {
   }
 }
 
-/// 宠物切换横滑（4 只头像 + 名字，修掉「只显示第一只」的缺口）。
+/// 成长手记顶部宠物切换卡片。
+/// 按设计稿支持展开/收起两种状态：展开时显示头像列表，收起时只保留标题栏。
 class _PetSwitch extends StatelessWidget {
   const _PetSwitch({
     required this.pets,
     required this.selectedId,
+    required this.expanded,
     required this.onSelect,
+    required this.onToggleExpanded,
   });
   final List<Pet> pets;
   final String selectedId;
+  final bool expanded;
   final ValueChanged<String> onSelect;
+  final VoidCallback onToggleExpanded;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 88,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: AppUi.pagePadding),
-        itemCount: pets.length,
-        separatorBuilder: (_, __) => const SizedBox(width: AppUi.space16),
-        itemBuilder: (c, i) {
-          final pet = pets[i];
-          return _PetFilterAvatarTile(
-            name: pet.name,
-            avatarPath: pet.avatarPath,
-            selected: pet.id == selectedId,
-            onTap: () => onSelect(pet.id),
-          );
-        },
+    final t = context.tokens;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: 24,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '毛孩们',
+                    style: TextStyle(
+                      fontSize: AppUi.fontTitle,
+                      height: 24 / AppUi.fontTitle,
+                      fontWeight: FontWeight.w400,
+                      color: t.textPrimary,
+                    ),
+                  ),
+                ),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onToggleExpanded,
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: Icon(
+                      expanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      size: 20,
+                      color: expanded
+                          ? const Color(0xFF000000)
+                          : const Color(0xFF09244B),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (expanded) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 88,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (var i = 0; i < pets.length; i++) ...[
+                      _PetFilterAvatarTile(
+                        name: pets[i].name,
+                        avatarPath: pets[i].avatarPath,
+                        selected: pets[i].id == selectedId,
+                        onTap: () => onSelect(pets[i].id),
+                      ),
+                      if (i != pets.length - 1) const SizedBox(width: 16),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -3734,62 +4373,111 @@ class _PetHeaderCard extends StatelessWidget {
   final int recordCount;
   final int photoCount;
 
+  /// 统计区年龄使用更紧凑的数字展示，和设计稿里的数值样式保持一致。
+  String get _ageMetricValue {
+    final birthday = DateTime.tryParse(pet.birthday);
+    if (birthday == null) return pet.ageLabel;
+    final now = DateTime(2026, 7, 24);
+    var years = now.year - birthday.year;
+    var months = now.month - birthday.month;
+    if (now.day < birthday.day) {
+      months -= 1;
+    }
+    if (months < 0) {
+      years -= 1;
+      months += 12;
+    }
+    if (years <= 0) {
+      return '$months月';
+    }
+    if (months == 0) {
+      return '$years';
+    }
+    return (years + months / 12).toStringAsFixed(1);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final t = context.tokens;
+    final subtitle = pet.breed.isNotEmpty
+        ? (pet.ageLabel != '未知' ? '${pet.breed} · ${pet.ageLabel}' : pet.breed)
+        : (pet.ageLabel != '未知' ? pet.ageLabel : '');
+
     return Container(
-      padding: const EdgeInsets.all(16),
+      constraints: const BoxConstraints(minHeight: 204),
+      padding: const EdgeInsets.fromLTRB(24, 12, 24, 12),
       decoration: BoxDecoration(
-        color: t.surface,
-        borderRadius: BorderRadius.circular(AppUi.radiusCard),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(radius: 42, backgroundImage: AssetImage(pet.avatarPath)),
-          const SizedBox(height: 8),
-          Text(
-            pet.name,
-            style: TextStyle(
-              fontSize: AppUi.fontHeadline,
-              fontWeight: FontWeight.w700,
-              color: t.textPrimary,
-            ),
-          ),
-          Text(
-            '${pet.breed} · ${pet.ageLabel}',
-            style: TextStyle(color: t.textSecondary),
-          ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              pet.bio,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: t.textSecondary,
-                fontSize: AppUi.fontBody,
+          // 顶部信息区：头像与基础资料横向排列，贴近设计稿结构。
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              ClipOval(
+                child: Image.asset(
+                  pet.avatarPath,
+                  width: 64,
+                  height: 64,
+                  fit: BoxFit.cover,
+                ),
               ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      pet.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        height: 28 / 20,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF000000),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    if (subtitle.isNotEmpty)
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          height: 20 / 12,
+                          fontWeight: FontWeight.w400,
+                          color: Color(0xFF999999),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            pet.bio,
+            style: const TextStyle(
+              fontSize: 14,
+              height: 22 / 14,
+              fontWeight: FontWeight.w400,
+              color: Color(0xFF000000),
             ),
           ),
           const SizedBox(height: 12),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _StatTile(
-                icon: LucideIcons.image,
-                label: '照片',
-                value: '$photoCount',
-              ),
-              _StatTile(
-                icon: LucideIcons.bookOpen,
-                label: '记录',
-                value: '$recordCount',
-              ),
-              _StatTile(
-                icon: LucideIcons.calendar,
-                label: '年龄',
-                value: pet.ageLabel,
-              ),
+              _PetMetricItem(label: '照片', value: '$photoCount'),
+              const SizedBox(width: 12),
+              _PetMetricItem(label: '记录', value: '$recordCount'),
+              const SizedBox(width: 12),
+              _PetMetricItem(label: '年龄', value: _ageMetricValue),
             ],
           ),
         ],
@@ -3798,56 +4486,243 @@ class _PetHeaderCard extends StatelessWidget {
   }
 }
 
-/// 录入按钮（体重 / 疫苗 / 趣事）。
-class _AddButton extends StatelessWidget {
-  const _AddButton({required this.type, required this.onTap});
-  final GrowthType type;
-  final VoidCallback onTap;
+/// 时间线单条记录。
+class _TimelineItem extends StatelessWidget {
+  const _TimelineItem({
+    required this.record,
+    required this.onAdd,
+    required this.onDelete,
+  });
+  final GrowthRecord record;
+  final VoidCallback onAdd;
+  final VoidCallback onDelete;
 
-  (Color, Color, String) get _style {
-    switch (type) {
+  (Color, Widget, String, String) get _style {
+    switch (record.type) {
       case GrowthType.weight:
-        return (const Color(0xFFD6EEF5), const Color(0xFF5BA8C8), '体重');
+        return (
+          const Color(0xFF38D070),
+          const MingCuteIcon(
+            MingCuteIcons.instrumentFill,
+            size: 18,
+            color: Colors.white,
+          ),
+          '记体重',
+          '体重',
+        );
       case GrowthType.vaccine:
-        return (const Color(0xFFFFE4DD), const Color(0xFFD4826A), '疫苗');
+        return (
+          const Color(0xFFFF5C5A),
+          const MingCuteIcon(
+            MingCuteIcons.injectionFill,
+            size: 18,
+            color: Colors.white,
+          ),
+          '记疫苗',
+          '疫苗',
+        );
       case GrowthType.note:
-        return (const Color(0xFFE8E0F6), const Color(0xFF9B8AC4), '趣事');
+        return (
+          const Color(0xFF9180FF),
+          const MingCuteIcon(
+            MingCuteIcons.tongueFill,
+            size: 18,
+            color: Colors.white,
+          ),
+          '记趣事',
+          '趣事',
+        );
     }
   }
 
-  IconData get _icon {
-    switch (type) {
+  String get _valueText {
+    switch (record.type) {
       case GrowthType.weight:
-        return LucideIcons.scale;
+        return '${record.value}kg';
       case GrowthType.vaccine:
-        return LucideIcons.syringe;
+        return record.value;
       case GrowthType.note:
-        return LucideIcons.heart;
+        return record.value;
     }
+  }
+
+  /// 时间样式改成“8月14日 23:05”，贴近设计稿展示。
+  String get _dateText {
+    final hh = record.date.hour.toString().padLeft(2, '0');
+    final mm = record.date.minute.toString().padLeft(2, '0');
+    final ss = record.date.second.toString().padLeft(2, '0');
+    return '${record.date.month}月${record.date.day}日 $hh:$mm:$ss';
   }
 
   @override
   Widget build(BuildContext context) {
-    final (bg, fg, label) = _style;
+    final (accentColor, iconWidget, actionLabel, typeName) = _style;
     return GestureDetector(
-      onTap: onTap,
+      onLongPress: () async {
+        // 长按后先二次确认，避免误删成长记录。
+        final shouldDelete = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) {
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '删除记录',
+                      style: TextStyle(
+                        fontSize: AppUi.fontHeadline,
+                        height: 28 / AppUi.fontHeadline,
+                        fontWeight: FontWeight.w400,
+                        color: Color(0xFF000000),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '确认删除这条$typeName记录吗？删除后将无法恢复。',
+                      style: TextStyle(
+                        fontSize: AppUi.fontBody,
+                        height: AppUi.lineHeight(AppUi.fontBody),
+                        fontWeight: FontWeight.w400,
+                        color: context.tokens.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _AppSecondaryActionButton(
+                            label: '取消',
+                            onPressed: () =>
+                                Navigator.of(dialogContext).pop(false),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: AppPrimaryActionButton(
+                            label: '删除',
+                            onPressed: () =>
+                                Navigator.of(dialogContext).pop(true),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+        if (shouldDelete == true) {
+          onDelete();
+        }
+      },
       child: Container(
-        height: 84,
+        height: 164,
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(AppUi.radiusCard),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
         ),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(_icon, size: AppUi.iconMedium, color: fg),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: accentColor,
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: iconWidget,
+                ),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onAdd,
+                  child: Container(
+                    height: 30,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: accentColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: accentColor.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      actionLabel,
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 20 / 12,
+                        fontWeight: FontWeight.w400,
+                        color: accentColor,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  typeName,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    height: 24 / 16,
+                    fontWeight: FontWeight.w400,
+                    color: Color(0xFF000000),
+                  ),
+                ),
+                Text(
+                  _valueText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    height: 24 / 16,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF000000),
+                  ),
+                ),
+                Text(
+                  _dateText,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    height: 20 / 12,
+                    fontWeight: FontWeight.w400,
+                    color: Color(0xFF999999),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
             Text(
-              label,
-              style: TextStyle(
-                fontSize: AppUi.fontBody,
-                fontWeight: FontWeight.w700,
-                color: fg,
+              record.note.isNotEmpty ? record.note : '已记录$typeName信息',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                height: 20 / 12,
+                fontWeight: FontWeight.w400,
+                color: Color(0xFF000000),
               ),
             ),
           ],
@@ -3857,126 +4732,38 @@ class _AddButton extends StatelessWidget {
   }
 }
 
-/// 时间线单条记录。
-class _TimelineItem extends StatelessWidget {
-  const _TimelineItem({required this.record, required this.onDelete});
-  final GrowthRecord record;
-  final VoidCallback onDelete;
+/// 统一浅色描边次按钮，给弹窗和底部弹层复用。
+class _AppSecondaryActionButton extends StatelessWidget {
+  const _AppSecondaryActionButton({
+    required this.label,
+    required this.onPressed,
+  });
 
-  (Color, Color, IconData, String) get _style {
-    switch (record.type) {
-      case GrowthType.weight:
-        return (
-          const Color(0xFFD6EEF5),
-          const Color(0xFF5BA8C8),
-          LucideIcons.scale,
-          '体重',
-        );
-      case GrowthType.vaccine:
-        return (
-          const Color(0xFFFFE4DD),
-          const Color(0xFFD4826A),
-          LucideIcons.syringe,
-          '疫苗',
-        );
-      case GrowthType.note:
-        return (
-          const Color(0xFFE8E0F6),
-          const Color(0xFF9B8AC4),
-          LucideIcons.heart,
-          '趣事',
-        );
-    }
-  }
-
-  String get _valueText {
-    switch (record.type) {
-      case GrowthType.weight:
-        return '${record.value} kg';
-      case GrowthType.vaccine:
-        return record.value;
-      case GrowthType.note:
-        return record.value;
-    }
-  }
+  final String label;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
-    final (bg, fg, icon, typeName) = _style;
-    final t = context.tokens;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: t.surface,
-        borderRadius: BorderRadius.circular(AppUi.radiusCard),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            margin: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
-            child: Icon(icon, size: AppUi.iconMedium, color: fg),
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          backgroundColor: Colors.white,
+          foregroundColor: context.tokens.textPrimary,
+          side: const BorderSide(color: Color(0xFFE2E4E6)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        typeName,
-                        style: TextStyle(
-                          fontSize: AppUi.fontCaption,
-                          fontWeight: FontWeight.w700,
-                          color: fg,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${record.date.year}-${record.date.month.toString().padLeft(2, '0')}-${record.date.day.toString().padLeft(2, '0')}',
-                        style: TextStyle(
-                          fontSize: AppUi.fontCaption,
-                          color: t.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    _valueText,
-                    style: TextStyle(
-                      fontSize: AppUi.fontTitle,
-                      fontWeight: FontWeight.w700,
-                      color: t.textPrimary,
-                    ),
-                  ),
-                  if (record.note.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      record.note,
-                      style: TextStyle(
-                        fontSize: AppUi.fontBody,
-                        color: t.textSecondary,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            fontSize: AppUi.fontTitle,
+            fontWeight: FontWeight.w400,
           ),
-          IconButton(
-            onPressed: onDelete,
-            icon: Icon(
-              LucideIcons.trash2,
-              size: AppUi.iconMedium,
-              color: t.textSecondary,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -3986,21 +4773,31 @@ class _EmptyTimeline extends StatelessWidget {
   const _EmptyTimeline();
   @override
   Widget build(BuildContext context) {
-    final t = context.tokens;
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 36),
-      alignment: Alignment.center,
-      child: Column(
+      height: 164,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: const Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            LucideIcons.clipboardList,
-            size: AppUi.iconLarge,
-            color: t.textSecondary,
+          MingCuteIcon(
+            MingCuteIcons.clipboard,
+            size: 24,
+            color: Color(0xFF999999),
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: 8),
           Text(
             '还没有记录，点上方按钮添加第一条',
-            style: TextStyle(fontSize: AppUi.fontBody, color: t.textSecondary),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 14,
+              height: 22 / 14,
+              fontWeight: FontWeight.w400,
+              color: Color(0xFF999999),
+            ),
           ),
         ],
       ),
@@ -4019,6 +4816,7 @@ class _AddRecordSheet extends StatefulWidget {
 }
 
 class _AddRecordSheetState extends State<_AddRecordSheet> {
+  static const Color _fieldBorderColor = Color(0xFFE2E4E6);
   DateTime _date = DateTime.now();
   final _valueCtl = TextEditingController();
   final _noteCtl = TextEditingController();
@@ -4061,12 +4859,204 @@ class _AddRecordSheetState extends State<_AddRecordSheet> {
     widget.onSubmit(record);
   }
 
+  String _formatDateLabel(DateTime date) {
+    final hh = date.hour.toString().padLeft(2, '0');
+    final mm = date.minute.toString().padLeft(2, '0');
+    final ss = date.second.toString().padLeft(2, '0');
+    return '${date.year}年${date.month.toString().padLeft(2, '0')}月${date.day.toString().padLeft(2, '0')}日 $hh:$mm:$ss';
+  }
+
+  InputDecoration _buildInputDecoration(
+    BuildContext context, {
+    required String hintText,
+  }) {
+    final t = context.tokens;
+    return InputDecoration(
+      hintText: hintText,
+      hintStyle: TextStyle(
+        fontSize: AppUi.fontBody,
+        height: AppUi.lineHeight(AppUi.fontBody),
+        color: t.textSecondary,
+      ),
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppUi.radiusCard),
+        borderSide: const BorderSide(color: _fieldBorderColor),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppUi.radiusCard),
+        borderSide: const BorderSide(color: _fieldBorderColor),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppUi.radiusCard),
+        borderSide: const BorderSide(color: Color(0xFF000000)),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppUi.radiusCard),
+        borderSide: const BorderSide(color: Color(0xFFFF5C5A)),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppUi.radiusCard),
+        borderSide: const BorderSide(color: Color(0xFFFF5C5A)),
+      ),
+      errorStyle: const TextStyle(fontSize: 12, height: 20 / 12),
+    );
+  }
+
+  Future<void> _showCustomDateSheet() async {
+    var tempDate = _date;
+    var tempSecond = _date.second;
+    final selectedDate = await showModalBottomSheet<DateTime>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE2E4E6),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    '记录时间',
+                    style: TextStyle(
+                      fontSize: AppUi.fontHeadline,
+                      height: 28 / AppUi.fontHeadline,
+                      fontWeight: FontWeight.w400,
+                      color: Color(0xFF000000),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SizedBox(
+                          height: 220,
+                          child: CupertinoDatePicker(
+                            mode: CupertinoDatePickerMode.dateAndTime,
+                            use24hFormat: true,
+                            initialDateTime: _date,
+                            minimumDate: DateTime(2018),
+                            maximumDate: DateTime.now(),
+                            onDateTimeChanged: (value) {
+                              tempDate = value;
+                            },
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 72,
+                        height: 220,
+                        child: Column(
+                          children: [
+                            const SizedBox(height: 12),
+                            const Text(
+                              '秒',
+                              style: TextStyle(
+                                fontSize: 12,
+                                height: 20 / 12,
+                                fontWeight: FontWeight.w400,
+                                color: Color(0xFF999999),
+                              ),
+                            ),
+                            Expanded(
+                              child: CupertinoPicker(
+                                itemExtent: 36,
+                                scrollController: FixedExtentScrollController(
+                                  initialItem: _date.second,
+                                ),
+                                onSelectedItemChanged: (value) {
+                                  tempSecond = value;
+                                },
+                                children: List.generate(
+                                  60,
+                                  (index) => Center(
+                                    child: Text(
+                                      index.toString().padLeft(2, '0'),
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w400,
+                                        color: Color(0xFF000000),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _AppSecondaryActionButton(
+                          label: '取消',
+                          onPressed: () => Navigator.of(sheetContext).pop(),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: AppPrimaryActionButton(
+                          label: '确定',
+                          onPressed: () {
+                            final picked = DateTime(
+                              tempDate.year,
+                              tempDate.month,
+                              tempDate.day,
+                              tempDate.hour,
+                              tempDate.minute,
+                              tempSecond,
+                            );
+                            final now = DateTime.now();
+                            Navigator.of(
+                              sheetContext,
+                            ).pop(picked.isAfter(now) ? now : picked);
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted || selectedDate == null) return;
+    setState(() => _date = selectedDate);
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
     return Container(
       decoration: BoxDecoration(
-        color: t.bgBase,
+        color: Colors.white,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: EdgeInsets.fromLTRB(
@@ -4096,103 +5086,119 @@ class _AddRecordSheetState extends State<_AddRecordSheet> {
               _title,
               style: TextStyle(
                 fontSize: AppUi.fontHeadline,
-                fontWeight: FontWeight.w700,
+                height: 28 / AppUi.fontHeadline,
+                fontWeight: FontWeight.w400,
                 color: t.textPrimary,
               ),
             ),
             const SizedBox(height: 16),
+            Text(
+              '日期',
+              style: TextStyle(
+                fontSize: AppUi.fontBody,
+                height: AppUi.lineHeight(AppUi.fontBody),
+                fontWeight: FontWeight.w400,
+                color: t.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
             GestureDetector(
-              onTap: () async {
-                final d = await showDatePicker(
-                  context: context,
-                  initialDate: _date,
-                  firstDate: DateTime(2018),
-                  lastDate: DateTime.now(),
-                );
-                if (d != null) setState(() => _date = d);
-              },
+              onTap: _showCustomDateSheet,
               child: Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
                   vertical: 12,
                 ),
                 decoration: BoxDecoration(
-                  color: t.surface,
+                  color: Colors.white,
                   borderRadius: BorderRadius.circular(AppUi.radiusCard),
-                  border: Border.all(color: t.brandSoft),
+                  border: Border.all(color: _fieldBorderColor),
                 ),
                 child: Row(
                   children: [
-                    Icon(
-                      LucideIcons.calendar,
-                      size: AppUi.iconMedium,
-                      color: t.brand,
+                    const MingCuteIcon(
+                      MingCuteIcons.calendar,
+                      size: 20,
+                      color: Color(0xFF000000),
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      '${_date.year}-${_date.month.toString().padLeft(2, '0')}-${_date.day.toString().padLeft(2, '0')}',
+                      _formatDateLabel(_date),
                       style: TextStyle(
                         fontSize: AppUi.fontBody,
                         color: t.textPrimary,
                       ),
+                    ),
+                    const Spacer(),
+                    // 日期选择入口右箭头统一使用 MingCute 和灰色规范。
+                    const MingCuteIcon(
+                      MingCuteIcons.rightLine,
+                      size: 20,
+                      color: Color(0xFF999999),
                     ),
                   ],
                 ),
               ),
             ),
             const SizedBox(height: 12),
+            Text(
+              _valueLabel,
+              style: TextStyle(
+                fontSize: AppUi.fontBody,
+                height: AppUi.lineHeight(AppUi.fontBody),
+                fontWeight: FontWeight.w400,
+                color: t.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
             TextFormField(
               controller: _valueCtl,
               keyboardType: widget.type == GrowthType.weight
                   ? TextInputType.number
                   : TextInputType.text,
-              decoration: InputDecoration(
-                labelText: _valueLabel,
-                filled: true,
-                fillColor: t.surface,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppUi.radiusCard),
-                  borderSide: BorderSide(color: t.brandSoft),
-                ),
+              style: TextStyle(
+                fontSize: AppUi.fontBody,
+                height: AppUi.lineHeight(AppUi.fontBody),
+                color: t.textPrimary,
+              ),
+              decoration: _buildInputDecoration(
+                context,
+                hintText: switch (widget.type) {
+                  GrowthType.weight => '请输入体重，例如 4.8',
+                  GrowthType.vaccine => '请输入疫苗名称',
+                  GrowthType.note => '请输入趣事标题',
+                },
               ),
               validator: (v) => v == null || v.trim().isEmpty ? '此项必填' : null,
             ),
             const SizedBox(height: 12),
+            Text(
+              _noteLabel,
+              style: TextStyle(
+                fontSize: AppUi.fontBody,
+                height: AppUi.lineHeight(AppUi.fontBody),
+                fontWeight: FontWeight.w400,
+                color: t.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
             TextFormField(
               controller: _noteCtl,
               maxLines: 3,
-              decoration: InputDecoration(
-                labelText: _noteLabel,
-                filled: true,
-                fillColor: t.surface,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppUi.radiusCard),
-                  borderSide: BorderSide(color: t.brandSoft),
-                ),
+              style: TextStyle(
+                fontSize: AppUi.fontBody,
+                height: AppUi.lineHeight(AppUi.fontBody),
+                color: t.textPrimary,
+              ),
+              decoration: _buildInputDecoration(
+                context,
+                hintText: widget.type == GrowthType.note
+                    ? '请输入趣事内容'
+                    : '补充一点备注信息',
               ),
             ),
             const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: FilledButton(
-                onPressed: _submit,
-                style: FilledButton.styleFrom(
-                  backgroundColor: t.brand,
-                  foregroundColor: t.textPrimary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(25),
-                  ),
-                ),
-                child: const Text(
-                  '保存',
-                  style: TextStyle(
-                    fontSize: AppUi.fontTitle,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
+            AppPrimaryActionButton(label: '保存', onPressed: _submit),
           ],
         ),
       ),
@@ -4200,42 +5206,36 @@ class _AddRecordSheetState extends State<_AddRecordSheet> {
   }
 }
 
-class _StatTile extends StatelessWidget {
-  const _StatTile({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-  final IconData icon;
+class _PetMetricItem extends StatelessWidget {
+  const _PetMetricItem({required this.label, required this.value});
   final String label;
   final String value;
+
   @override
   Widget build(BuildContext context) {
-    final t = context.tokens;
-    return Container(
-      width: 96,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: t.surface,
-        borderRadius: BorderRadius.circular(AppUi.radiusCard),
-      ),
+    return Expanded(
+      // 统计项改为左对齐，和当前卡片信息区的阅读方向保持一致。
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: t.brand),
-          const SizedBox(height: 8),
           Text(
             value,
-            style: TextStyle(
-              fontSize: AppUi.fontHeadline,
-              fontWeight: FontWeight.w700,
-              color: t.textPrimary,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 20,
+              height: 28 / 20,
+              fontWeight: FontWeight.w400,
+              color: Color(0xFF000000),
             ),
           ),
           Text(
             label,
-            style: TextStyle(
-              fontSize: AppUi.fontCaption,
-              color: t.textSecondary,
+            style: const TextStyle(
+              fontSize: 12,
+              height: 20 / 12,
+              fontWeight: FontWeight.w400,
+              color: Color(0xFF999999),
             ),
           ),
         ],
@@ -4258,40 +5258,17 @@ class SettingsPage extends ConsumerWidget {
         children: [
           const _SettingsSectionTitle(title: '外观'),
           const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: t.surface,
-              borderRadius: BorderRadius.circular(AppUi.radiusCard),
-            ),
-            child: SegmentedButton<ThemeMode>(
-              selected: {mode},
-              onSelectionChanged: (s) =>
-                  ref.read(themeModeProvider.notifier).setMode(s.first),
-              segments: const [
-                ButtonSegment(
-                  value: ThemeMode.light,
-                  icon: Icon(LucideIcons.sun),
-                  label: Text('浅色'),
-                ),
-                ButtonSegment(
-                  value: ThemeMode.dark,
-                  icon: Icon(LucideIcons.moon),
-                  label: Text('深色'),
-                ),
-                ButtonSegment(
-                  value: ThemeMode.system,
-                  icon: Icon(LucideIcons.smartphone),
-                  label: Text('系统'),
-                ),
-              ],
-            ),
+          _ThemeModeTabs(
+            selectedMode: mode,
+            onChanged: (value) =>
+                ref.read(themeModeProvider.notifier).setMode(value),
           ),
           const SizedBox(height: 24),
           const _SettingsSectionTitle(title: '数据'),
           const SizedBox(height: 12),
           _ActionRow(
-            icon: LucideIcons.image,
+            // 设置页缓存清理图标统一切到 MingCute 版本。
+            icon: MingCuteIcons.pic2Line,
             title: '清除相册缓存',
             subtitle: '删除应用内拍摄的照片（不可恢复）',
             onTap: () => _confirmClear(
@@ -4302,7 +5279,7 @@ class SettingsPage extends ConsumerWidget {
           ),
           const SizedBox(height: 12),
           _ActionRow(
-            icon: LucideIcons.clapperboard,
+            icon: MingCuteIcons.clapperboardLine,
             title: '清除短片缓存',
             subtitle: '删除已保存的萌宠短片（不可恢复）',
             onTap: () => _confirmClear(
@@ -4325,18 +5302,12 @@ class SettingsPage extends ConsumerWidget {
               children: [
                 Row(
                   children: [
-                    Icon(
-                      LucideIcons.pawPrint,
-                      color: t.brand,
-                      size: AppUi.iconMedium,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '元宝拍拍',
-                      style: TextStyle(
-                        fontSize: AppUi.fontHeadline,
-                        fontWeight: FontWeight.w700,
-                        color: t.textPrimary,
+                    SizedBox(
+                      width: 96,
+                      height: 28,
+                      child: SvgPicture.asset(
+                        'assets/brand/logo.svg',
+                        fit: BoxFit.contain,
                       ),
                     ),
                   ],
@@ -4374,24 +5345,62 @@ Future<void> _confirmClear(
 ) async {
   final ok = await showDialog<bool>(
     context: context,
-    builder: (_) => AlertDialog(
-      title: Text('清除$label缓存'),
-      content: Text('确定要删除所有$label吗？此操作不可恢复。'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, true),
-          style: FilledButton.styleFrom(
-            backgroundColor: context.tokens.brand,
-            foregroundColor: context.tokens.textPrimary,
+    builder: (dialogContext) {
+      return Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
           ),
-          child: const Text('清除'),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '清除$label缓存',
+                style: const TextStyle(
+                  fontSize: AppUi.fontHeadline,
+                  height: 28 / AppUi.fontHeadline,
+                  fontWeight: FontWeight.w400,
+                  color: Color(0xFF000000),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '确认删除所有$label吗？清除后将无法恢复。',
+                style: TextStyle(
+                  fontSize: AppUi.fontBody,
+                  height: AppUi.lineHeight(AppUi.fontBody),
+                  fontWeight: FontWeight.w400,
+                  color: context.tokens.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: _AppSecondaryActionButton(
+                      label: '取消',
+                      onPressed: () => Navigator.of(dialogContext).pop(false),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: AppPrimaryActionButton(
+                      label: '清除',
+                      onPressed: () => Navigator.of(dialogContext).pop(true),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-      ],
-    ),
+      );
+    },
   );
   if (ok == true) {
     clear();
@@ -4422,6 +5431,91 @@ class _SettingsSectionTitle extends StatelessWidget {
   }
 }
 
+/// 设置页主题切换改成统一胶囊分段按钮，避免继续使用默认平台控件外观。
+class _ThemeModeTabs extends StatelessWidget {
+  const _ThemeModeTabs({required this.selectedMode, required this.onChanged});
+
+  final ThemeMode selectedMode;
+  final ValueChanged<ThemeMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _ThemeModeTabItem(
+              label: '浅色',
+              selected: selectedMode == ThemeMode.light,
+              onTap: () => onChanged(ThemeMode.light),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: _ThemeModeTabItem(
+              label: '深色',
+              selected: selectedMode == ThemeMode.dark,
+              onTap: () => onChanged(ThemeMode.dark),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: _ThemeModeTabItem(
+              label: '系统',
+              selected: selectedMode == ThemeMode.system,
+              onTap: () => onChanged(ThemeMode.system),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ThemeModeTabItem extends StatelessWidget {
+  const _ThemeModeTabItem({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 40,
+        decoration: BoxDecoration(
+          color: selected ? context.tokens.brand : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? context.tokens.brand : const Color(0xFFE2E4E6),
+          ),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 14,
+            height: 22 / 14,
+            fontWeight: FontWeight.w400,
+            color: Color(0xFF000000),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 设置操作行（图标 + 标题 + 副标题 + 右箭头）。
 class _ActionRow extends StatelessWidget {
   const _ActionRow({
@@ -4430,7 +5524,7 @@ class _ActionRow extends StatelessWidget {
     required this.subtitle,
     required this.onTap,
   });
-  final IconData icon;
+  final String icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
@@ -4451,15 +5545,7 @@ class _ActionRow extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: t.brandSoft,
-                  borderRadius: BorderRadius.circular(AppUi.radiusCard),
-                ),
-                child: Icon(icon, size: AppUi.iconMedium, color: t.brand),
-              ),
+              MingCuteIcon(icon, size: 20, color: const Color(0xFF000000)),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -4484,7 +5570,11 @@ class _ActionRow extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(LucideIcons.chevronRight, color: t.textSecondary),
+              const MingCuteIcon(
+                MingCuteIcons.rightLine,
+                size: 20,
+                color: Color(0xFF999999),
+              ),
             ],
           ),
         ),

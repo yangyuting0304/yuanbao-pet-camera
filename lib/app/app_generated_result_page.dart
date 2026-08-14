@@ -1,9 +1,9 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:lucide_flutter/lucide_flutter.dart';
 import 'package:pet_camera/app/app_back_button.dart';
 import 'package:pet_camera/app/app_primary_action_button.dart';
+import 'package:pet_camera/app/mingcute_icons.dart';
 import 'package:pet_camera/app/tokens.dart';
 
 typedef AppResultSaveCallback = Future<void> Function();
@@ -18,7 +18,7 @@ class AppGeneratedResultPage extends StatefulWidget {
     this.demo = false,
     this.title = '生成结果',
     this.actionLabel = '保存到相册',
-    this.actionIcon = LucideIcons.download,
+    this.actionIconName = MingCuteIcons.download,
     this.demoText = '演示模式 · 未接入真实 API',
   });
 
@@ -27,7 +27,7 @@ class AppGeneratedResultPage extends StatefulWidget {
   final bool demo;
   final String title;
   final String actionLabel;
-  final IconData actionIcon;
+  final String actionIconName;
   final String demoText;
 
   @override
@@ -87,7 +87,12 @@ class _AppGeneratedResultPageState extends State<AppGeneratedResultPage> {
       ),
       bottomNavigationBar: AppPrimaryActionIconBottomBar(
         label: widget.actionLabel,
-        icon: widget.actionIcon,
+        // 结果页主按钮图标统一改成 MingCute，和全局功能图标保持一致。
+        iconWidget: MingCuteIcon(
+          widget.actionIconName,
+          size: AppUi.iconSmall,
+          color: t.textPrimary,
+        ),
         onPressed: _handleSave,
         isLoading: _saving,
       ),
