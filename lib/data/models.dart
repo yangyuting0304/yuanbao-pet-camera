@@ -3,6 +3,8 @@
 /// 后续接入 Drift 本地库时可直接映射，无需改动 UI 层。
 library;
 
+import 'seed_config.dart';
+
 class Pet {
   final String id;
   final String name;
@@ -32,6 +34,10 @@ class Pet {
     bio: j['bio'] as String,
   );
 
+  /// 远程头像地址（种子图已外置到对象存储，按「前缀 + 文件名」拼接）。
+  String get avatarUrl => SeedConfig.photoUrl(avatarFileName);
+
+  /// 本地资源路径，仅作数据记录 —— 图片已不随安装包分发。
   String get avatarPath => 'assets/seed/photos/$avatarFileName';
 
   /// 由生日计算年龄（周岁，向下取整）。
@@ -104,6 +110,10 @@ class Photo {
     source: j['source'] as String,
   );
 
+  /// 远程图片地址（种子图已外置到对象存储，按「前缀 + 文件名」拼接）。
+  String get remoteUrl => SeedConfig.photoUrl(fileName);
+
+  /// 本地资源路径，仅作数据记录 —— 图片已不随安装包分发。
   String get assetPath => 'assets/seed/photos/$fileName';
 
   /// 时间视图分组键：YYYY年M月

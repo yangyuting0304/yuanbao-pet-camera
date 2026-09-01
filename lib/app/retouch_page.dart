@@ -2,9 +2,11 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:pet_camera/app/app_back_button.dart';
 import 'package:pet_camera/app/app_generated_result_page.dart';
 import 'package:pet_camera/app/app_horizontal_edge_inset.dart';
+import 'package:pet_camera/app/app_image.dart';
 import 'package:pet_camera/app/app_loading_view.dart';
 import 'package:pet_camera/app/app_photo_preview_panel.dart';
 import 'package:pet_camera/app/app_primary_action_button.dart';
@@ -81,8 +83,8 @@ class _RetouchPageState extends ConsumerState<RetouchPage> {
     for (final p in seed) {
       list.add(
         _RetouchAlbumItem(
-          source: SourcePhoto(assetPath: p.assetPath, caption: p.petId),
-          image: AssetImage(p.assetPath),
+          source: SourcePhoto(url: p.remoteUrl, caption: p.petId),
+          image: CachedNetworkImageProvider(p.remoteUrl),
           takenAt: p.capturedAt,
           petId: p.petId,
         ),
@@ -97,8 +99,8 @@ class _RetouchPageState extends ConsumerState<RetouchPage> {
     if (source.bytes != null) {
       return MemoryImage(source.bytes!);
     }
-    if (source.assetPath != null) {
-      return AssetImage(source.assetPath!);
+    if (source.url != null) {
+      return CachedNetworkImageProvider(source.url!);
     }
     return null;
   }
@@ -1077,7 +1079,7 @@ class _RetouchAlbumPickerPageState extends State<_RetouchAlbumPickerPage> {
           final pet = petsWithPhotos[index - 1];
           return _RetouchPetFilterAvatarTile(
             name: pet.name,
-            avatarPath: pet.avatarPath,
+            avatarUrl: pet.avatarUrl,
             selected: _selectedPetId == pet.id,
             onTap: () => setState(() => _selectedPetId = pet.id),
           );
@@ -1321,13 +1323,13 @@ class _RetouchAlbumModeTab extends StatelessWidget {
 class _RetouchPetFilterAvatarTile extends StatelessWidget {
   const _RetouchPetFilterAvatarTile({
     required this.name,
-    required this.avatarPath,
+    required this.avatarUrl,
     required this.selected,
     required this.onTap,
   });
 
   final String name;
-  final String avatarPath;
+  final String avatarUrl;
   final bool selected;
   final VoidCallback onTap;
 
@@ -1356,11 +1358,11 @@ class _RetouchPetFilterAvatarTile extends StatelessWidget {
                 ),
               ),
               child: ClipOval(
-                child: Image.asset(
-                  avatarPath,
+                child: AppImage(
+                  url: avatarUrl,
                   width: 56,
                   height: 56,
-                  fit: BoxFit.cover,
+                  memCacheWidth: 112,
                 ),
               ),
             ),
@@ -1465,11 +1467,11 @@ class _RetouchPetProfileHeader extends StatelessWidget {
       child: Row(
         children: [
           ClipOval(
-            child: Image.asset(
-              pet.avatarPath,
+            child: AppImage(
+              url: pet.avatarUrl,
               width: 48,
               height: 48,
-              fit: BoxFit.cover,
+              memCacheWidth: 96,
             ),
           ),
           const SizedBox(width: AppUi.space12),
@@ -1529,7 +1531,7 @@ class _RetouchSquareGridSliver extends StatelessWidget {
   final SourcePhoto? selected;
 
   bool _isSame(SourcePhoto a, SourcePhoto b) =>
-      a.assetPath == b.assetPath && a.bytes == b.bytes;
+      a.url == b.url && a.bytes == b.bytes;
 
   @override
   Widget build(BuildContext context) {

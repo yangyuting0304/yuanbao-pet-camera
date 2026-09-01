@@ -26,6 +26,8 @@ dependencies:
   camera: ^0.11.1
   # HTTP 客户端（切片3：AI 写真云端 API 调用）
   http: ^1.2.0
+  # 远程图片加载与缓存（种子图外置 COS 后统一走 AppImage 组件）
+  cached_network_image: ^3.4.1
   hive_flutter: ^1.1.0
   # 全站备案号 Footer：点击跳转工信部备案管理系统
   url_launcher: ^6.3.0
@@ -38,7 +40,9 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/seed/photos/
+    # 种子照片已外置到对象存储（按 SeedConfig 拼 URL），不再打包进安装包。
+    # 仅保留示例短片（0.82 MB）随包分发，播放更稳。
+    - assets/seed/photos/feat_video_compressed.mp4
     - assets/seed/seed_manifest.json
     # 品牌 Logo 资源。
     - assets/brand/logo.svg

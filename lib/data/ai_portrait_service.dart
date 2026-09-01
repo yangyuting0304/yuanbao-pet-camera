@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/widgets.dart' show IconData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -90,15 +89,16 @@ class AiPortraitException implements Exception {
   String toString() => 'AiPortraitException: $message';
 }
 
-/// 云端写真服务骨架（通义万相 DashScope 异步任务 API）。
+/// 云端写真服务（百炼 wan2.7-image-pro 图生图，异步任务 API）。
 ///
-/// 真实接入只需在构建期注入 API Key：
+/// 真实接入只需在构建期注入 API Key / 代理地址：
 ///   flutter run --dart-define=DASHSCOPE_API_KEY=你的Key
-/// 未配置 Key 时自动进入「演示模式」回显源图，便于在 Web 端跑通完整交互流。
+///   flutter run --dart-define=MAAS_BASE_URL=https://ws-xxxx.cn-beijing.maas.aliyuncs.com/api/v1
+///   flutter run --dart-define=AI_PROXY_URL=https://<你的代理>/api/beautify
+/// 未配置 Key / 代理时自动进入「演示模式」回显源图，便于在 Web 端跑通完整交互流。
 ///
-/// 注：当前骨架以文生图（wanx2.1-t2i）建模风格；
-/// 若要「照片→写真」图生图，需先把源图上传到 OSS 取得可访问 URL，
-/// 再在 input.image_url 中引用（DashScope 不支持直接传图字节）。
+/// 写真 = 「照片 → 写真」图生图：wan2.7-image-pro 支持 base64 图片内联输入
+/// （multimodal-generation 端点），直连路径与 ECS 代理行为一致。
 class AiPortraitService {
   // 安全读取：编译期 --dart-define 注入，禁止硬编码到源码。
   static const String _apiKey = String.fromEnvironment(
@@ -113,8 +113,14 @@ class AiPortraitService {
     defaultValue: '',
   );
 
+  // 百炼 workspace 专属 base（直连路径用，与 .env 的 MAAS_BASE_URL 一致）。
+  static const String _maasBase = String.fromEnvironment(
+    'MAAS_BASE_URL',
+    defaultValue: 'https://dashscope.aliyuncs.com/api/v1',
+  );
+
   static const String _endpoint =
-      'https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis';
+      '$_maasBase/services/aigc/multimodal-generation/generation';
 
   /// 生成宠物 AI 写真。
   Future<PortraitResult> generatePortrait(PortraitRequest req) async {
@@ -135,7 +141,7 @@ class AiPortraitService {
       (s) => s.id == req.styleId,
       orElse: () => kPortraitStyles.first,
     );
-    final taskId = await _submitTask(style);
+    final taskId = await _submitTask(req, style);
     final url = await _pollTask(taskId);
     final resp = await http.get(Uri.parse(url));
     if (resp.statusCode != 200) {
@@ -172,8 +178,9 @@ class AiPortraitService {
     );
   }
 
-  /// 提交异步生成任务，返回 task_id。
-  Future<String> _submitTask(PortraitStyle style) async {
+  /// 提交异步图生图任务（wan2.7-image-pro + base64 内联源图），返回 task_id。
+  Future<String> _submitTask(PortraitRequest req, PortraitStyle style) async {
+    final dataUrl = 'data:image/jpeg;base64,${base64Encode(req.sourceBytes)}';
     final resp = await http.post(
       Uri.parse(_endpoint),
       headers: <String, String>{
@@ -182,9 +189,19 @@ class AiPortraitService {
         'X-DashScope-Async': 'enable',
       },
       body: jsonEncode(<String, Object>{
-        'model': 'wanx2.1-t2i-image-synthesis',
-        'input': <String, String>{'prompt': style.prompt},
-        'parameters': <String, Object>{'size': '1024*1024', 'n': 1},
+        'model': 'wan2.7-image-pro',
+        'input': <String, Object>{
+          'messages': <Object>[
+            <String, Object>{
+              'role': 'user',
+              'content': <Object>[
+                <String, String>{'text': style.prompt},
+                <String, String>{'image': dataUrl},
+              ],
+            },
+          ],
+        },
+        'parameters': <String, Object>{'size': '1K', 'n': 1},
       }),
     );
     if (resp.statusCode != 200) {
@@ -196,9 +213,7 @@ class AiPortraitService {
 
   /// 轮询任务状态，成功后返回结果图 URL。
   Future<String> _pollTask(String taskId) async {
-    final uri = Uri.parse(
-      'https://dashscope.aliyuncs.com/api/v1/tasks/$taskId',
-    );
+    final uri = Uri.parse('$_maasBase/tasks/$taskId');
     const maxAttempts = 30;
     for (var i = 0; i < maxAttempts; i++) {
       await Future<void>.delayed(const Duration(seconds: 2));
@@ -224,17 +239,25 @@ final aiPortraitServiceProvider = Provider<AiPortraitService>(
   (ref) => AiPortraitService(),
 );
 
-/// 源照片（拍摄字节流 或 种子资源路径），统一为可选选择项。
+/// 源照片（拍摄字节流 或 种子远程图），统一为可选选择项。
 class SourcePhoto {
-  const SourcePhoto({this.assetPath, this.bytes, required this.caption});
-  final String? assetPath;
+  const SourcePhoto({this.url, this.bytes, required this.caption});
+
+  /// 远程图片地址（种子图已外置到对象存储）。
+  final String? url;
+
+  /// 内存中的图片字节（用户拍摄 / AI 生成）。
   final Uint8List? bytes;
+
   final String caption;
 
-  /// 解析为字节流（种子资源经 rootBundle 加载）。
+  /// 解析为字节流：内存图直接返回，种子图从远程下载。
   Future<Uint8List> resolveBytes() async {
     if (bytes != null) return bytes!;
-    final data = await rootBundle.load(assetPath!);
-    return data.buffer.asUint8List();
+    final resp = await http.get(Uri.parse(url!));
+    if (resp.statusCode != 200) {
+      throw AiPortraitException('读取源图失败（${resp.statusCode}）');
+    }
+    return resp.bodyBytes;
   }
 }

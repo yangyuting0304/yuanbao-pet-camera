@@ -36,6 +36,13 @@ migrate_working_dir/
 # 归档产物（网页版快照，单独存 release/，不进源码库）
 /release/
 
+# 根目录误装的 Node 依赖（COS SDK 遗留物，真正工具在 tools/* 下各自 node_modules）
+/node_modules/
+/node_modules/**
+
+# tools/* 下各 Node 工具（font-subset、seed-upload）的依赖，按需 npm i 重建，不入库
+/tools/*/node_modules/
+
 # Symbolication related
 app.*.symbols
 
@@ -58,3 +65,7 @@ short_video_verify.png
 _denoise_*.png
 *_verify*.png
 *.log
+
+# 构建/运行日志（调试产物，不入库）
+/build_log*.txt
+/build_log*.log

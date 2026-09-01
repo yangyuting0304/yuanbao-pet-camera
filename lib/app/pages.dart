@@ -9,6 +9,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:pet_camera/app/app_image.dart';
 import 'package:pet_camera/app/app_generated_result_page.dart';
 import 'package:pet_camera/app/app_primary_action_button.dart';
 import 'package:pet_camera/app/app_photo_preview_panel.dart';
@@ -22,6 +24,7 @@ import 'package:pet_camera/data/captured_photos.dart';
 import 'package:pet_camera/data/short_videos.dart';
 import 'package:pet_camera/data/app_settings.dart';
 import 'package:pet_camera/data/models.dart';
+import 'package:pet_camera/data/seed_config.dart';
 import 'package:pet_camera/data/seed_repository.dart';
 import 'package:pet_camera/data/growth_records.dart';
 
@@ -345,8 +348,8 @@ class _SnapshotCard extends StatelessWidget {
               bottom: 28,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(AppUi.radiusCard),
-                child: Image.asset(
-                  'assets/seed/photos/${colors.photo}',
+                child: AppImage(
+                  url: SeedConfig.photoUrl(colors.photo),
                   fit: BoxFit.cover,
                   alignment: colors.align,
                 ),
@@ -541,8 +544,8 @@ class _HeroBannerCard extends StatelessWidget {
                 // 右侧宠物照片
                 ClipRRect(
                   borderRadius: BorderRadius.circular(AppUi.radiusCard),
-                  child: Image.asset(
-                    'assets/seed/photos/yuanbao_headshot.png',
+                  child: AppImage(
+                    url: SeedConfig.photoUrl('yuanbao_headshot.png'),
                     fit: BoxFit.cover,
                     width: 72,
                     height: 72,
@@ -558,13 +561,14 @@ class _HeroBannerCard extends StatelessWidget {
 }
 
 /// 功能卡片数据（照片和功能语义匹配 + 各宠物混合展示）
-const _featureCards = [
+/// 封面图走远程（SeedConfig），示例视频仍随包分发。
+final _featureCards = [
   _FeatCardData(
     iconName: MingCuteIcons.magic2,
     title: '毛孩写真',
     desc: 'AI生成油画、插画等多种艺术风格肖像。',
     tag: 'AI 驱动',
-    assetPath: 'assets/seed/photos/feat_portrait.jpg', // ★ 金元宝9宫格写真
+    imageUrl: SeedConfig.photoUrl('feat_portrait.jpg'), // ★ 金元宝9宫格写真
     route: '/portrait',
     align: Alignment(0.0, -0.1), // 写真构图居中
   ),
@@ -573,7 +577,7 @@ const _featureCards = [
     title: '毛孩相册',
     desc: '自动按宠物归类，瀑布流浏览所有照片。',
     tag: '201 张照片',
-    assetPath: 'assets/seed/photos/feat_album.jpg', // ★ 春春江江4小奶猫
+    imageUrl: SeedConfig.photoUrl('feat_album.jpg'), // ★ 春春江江4小奶猫
     route: '/album',
     align: Alignment(0.0, -0.3),
   ),
@@ -582,7 +586,7 @@ const _featureCards = [
     title: '一键成片',
     desc: '选几张照片，AI自动配乐剪辑成短视频。',
     tag: '视频',
-    assetPath: 'assets/seed/photos/feat_video_thumb.jpg', // ★ 视频缩略图
+    imageUrl: SeedConfig.photoUrl('feat_video_thumb.jpg'), // ★ 视频缩略图
     videoAssetPath:
         'assets/seed/photos/feat_video_compressed.mp4', // ★ 压缩版(0.82MB,云端秒加载)
     route: '/short-video',
@@ -593,7 +597,7 @@ const _featureCards = [
     title: '毛孩美颜',
     desc: '智能抠图换背景，叠加海量趣味贴纸。',
     tag: '已上线',
-    assetPath: 'assets/seed/photos/feat_retouch.jpg', // ★ 布偶猫蓝眼睛(木头)
+    imageUrl: SeedConfig.photoUrl('feat_retouch.jpg'), // ★ 布偶猫蓝眼睛(木头)
     route: '/retouch',
     align: Alignment(0.0, -0.25),
   ),
@@ -602,7 +606,7 @@ const _featureCards = [
     title: '成长手记',
     desc: '记录体重、疫苗、趣事与每个成长细节。',
     tag: '4 只宠物',
-    assetPath: 'assets/seed/photos/feat_profile.jpg', // ★ 兽医体检
+    imageUrl: SeedConfig.photoUrl('feat_profile.jpg'), // ★ 兽医体检
     route: '/pet-profile',
     align: Alignment(0.0, -0.2),
   ),
@@ -611,7 +615,7 @@ const _featureCards = [
     title: '灵动快门',
     desc: '全屏取景+防抖算法，精准抓拍灵动瞬间。',
     tag: '已接入',
-    assetPath: 'assets/seed/photos/feat_camera.jpg', // ★ 戴圈金毛(小凳子)
+    imageUrl: SeedConfig.photoUrl('feat_camera.jpg'), // ★ 戴圈金毛(小凳子)
     route: '/camera',
     align: Alignment(0.0, -0.15),
   ),
@@ -624,7 +628,7 @@ class _FeatCardData {
     required this.title,
     required this.desc,
     required this.tag,
-    required this.assetPath,
+    required this.imageUrl,
     required this.route,
     this.align = const Alignment(0.0, -0.2), // 默认偏上保猫脸
     this.videoAssetPath, // 视频资源路径（非空时显示播放按钮）
@@ -633,7 +637,7 @@ class _FeatCardData {
   final String title;
   final String desc;
   final String tag;
-  final String assetPath;
+  final String imageUrl;
   final String route;
   final Alignment align; // 每张卡片独立的 cover 焦点
   final String? videoAssetPath; // 视频资源路径
@@ -723,8 +727,8 @@ class _ImageFeatCard extends StatelessWidget {
                 child: Stack(
                   children: [
                     Positioned.fill(
-                      child: Image.asset(
-                        data.assetPath,
+                      child: AppImage(
+                        url: data.imageUrl,
                         fit: BoxFit.cover,
                         alignment: data.align,
                       ),
@@ -942,8 +946,8 @@ class _AutoPlayVideoCardState extends State<_AutoPlayVideoCard> {
                     fit: StackFit.expand,
                     children: [
                       // === 底层：静态缩略图（始终渲染，永不空白/暗/VIDEO）===
-                      Image.asset(
-                        widget.data.assetPath,
+                      AppImage(
+                        url: widget.data.imageUrl,
                         fit: BoxFit.cover,
                         alignment: widget.data.align,
                       ),
@@ -1164,7 +1168,7 @@ class _PhotoStrip extends StatelessWidget {
           itemCount: photos.length,
           separatorBuilder: (_, __) => const SizedBox(width: 8),
           itemBuilder: (context, i) =>
-              _MasonryPhotoTile(assetPath: 'assets/seed/photos/${photos[i]}'),
+              _MasonryPhotoTile(url: SeedConfig.photoUrl(photos[i])),
         ),
       ),
     );
@@ -1173,8 +1177,8 @@ class _PhotoStrip extends StatelessWidget {
 
 /// Pinterest 风格照片卡片 —— **等高 + 宽度跟随照片真实比例 + fitHeight 不裁切**
 class _MasonryPhotoTile extends StatelessWidget {
-  const _MasonryPhotoTile({required this.assetPath});
-  final String assetPath;
+  const _MasonryPhotoTile({required this.url});
+  final String url;
   static const double _h = 175;
 
   @override
@@ -1192,7 +1196,12 @@ class _MasonryPhotoTile extends StatelessWidget {
           ),
           clipBehavior: Clip.antiAlias,
           // ★ width 不固定 → 由 fitHeight 按照片真实比例算出，宽窄自然错落
-          child: Image.asset(assetPath, fit: BoxFit.fitHeight, height: _h),
+          child: AppImage(
+            url: url,
+            fit: BoxFit.fitHeight,
+            height: _h,
+            memCacheWidth: 400,
+          ),
         ),
       ),
     );
@@ -2829,7 +2838,7 @@ class _PortraitAlbumPickerPageState extends State<_PortraitAlbumPickerPage> {
           final pet = petsWithPhotos[index - 1];
           return _PetFilterAvatarTile(
             name: pet.name,
-            avatarPath: pet.avatarPath,
+            avatarUrl: pet.avatarUrl,
             selected: _selectedPetId == pet.id,
             onTap: () => setState(() => _selectedPetId = pet.id),
           );
@@ -2991,7 +3000,7 @@ class _PortraitSquareGridSliver extends StatelessWidget {
   final SourcePhoto? selected;
 
   bool _isSame(SourcePhoto a, SourcePhoto b) =>
-      a.assetPath == b.assetPath && a.bytes == b.bytes;
+      a.url == b.url && a.bytes == b.bytes;
 
   @override
   Widget build(BuildContext context) {
@@ -3193,8 +3202,8 @@ List<_AlbumItem> _mergePhotos(List<Photo> seed, List<CapturedPhoto> captured) =>
         ),
       for (final p in seed)
         _AlbumItem(
-          source: SourcePhoto(assetPath: p.assetPath, caption: p.petId),
-          image: AssetImage(p.assetPath),
+          source: SourcePhoto(url: p.remoteUrl, caption: p.petId),
+          image: CachedNetworkImageProvider(p.remoteUrl),
           caption: p.capturedAt.toString().replaceFirst('.000', ''),
           takenAt: p.capturedAt,
           petId: p.petId,
@@ -3217,11 +3226,21 @@ class _AlbumView extends StatefulWidget {
 class _AlbumViewState extends State<_AlbumView> {
   bool _byTime = false;
   String? _selectedPetId; // null = 全部宠物
+  bool _argsLoaded = false;
 
   @override
   void initState() {
     super.initState();
-    // 从路由参数读取 petId，自动筛选到对应宠物相册
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 从路由参数读取 petId，自动筛选到对应宠物相册。
+    // 注意：ModalRoute.of 依赖 InheritedWidget，必须在 didChangeDependencies
+    // 中调用（initState 阶段调用会抛 dependOnInheritedWidgetOfExactType 异常）。
+    if (_argsLoaded) return;
+    _argsLoaded = true;
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is Map<String, dynamic>) {
       final petId = args['petId'] as String?;
@@ -3446,7 +3465,7 @@ class _AlbumViewState extends State<_AlbumView> {
           final pet = petsWithPhotos[index - 1];
           return _PetFilterAvatarTile(
             name: pet.name,
-            avatarPath: pet.avatarPath,
+            avatarUrl: pet.avatarUrl,
             selected: _selectedPetId == pet.id,
             onTap: () => setState(() => _selectedPetId = pet.id),
           );
@@ -3651,13 +3670,13 @@ class _AlbumModeTab extends StatelessWidget {
 class _PetFilterAvatarTile extends StatelessWidget {
   const _PetFilterAvatarTile({
     required this.name,
-    required this.avatarPath,
+    required this.avatarUrl,
     required this.selected,
     required this.onTap,
   });
 
   final String name;
-  final String avatarPath;
+  final String avatarUrl;
   final bool selected;
   final VoidCallback onTap;
 
@@ -3687,11 +3706,11 @@ class _PetFilterAvatarTile extends StatelessWidget {
                 ),
               ),
               child: ClipOval(
-                child: Image.asset(
-                  avatarPath,
+                child: AppImage(
+                  url: avatarUrl,
                   width: 56,
                   height: 56,
-                  fit: BoxFit.cover,
+                  memCacheWidth: 112,
                 ),
               ),
             ),
@@ -3804,11 +3823,11 @@ class _PetProfileHeader extends StatelessWidget {
             Row(
               children: [
                 ClipOval(
-                  child: Image.asset(
-                    pet.avatarPath,
+                  child: AppImage(
+                    url: pet.avatarUrl,
                     width: 48,
                     height: 48,
-                    fit: BoxFit.cover,
+                    memCacheWidth: 96,
                   ),
                 ),
                 const SizedBox(width: AppUi.space12),
@@ -3884,11 +3903,11 @@ class _PetProfileHeader extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           ClipOval(
-            child: Image.asset(
-              pet.avatarPath,
+            child: AppImage(
+              url: pet.avatarUrl,
               width: 56,
               height: 56,
-              fit: BoxFit.cover,
+              memCacheWidth: 112,
             ),
           ),
           const SizedBox(width: 12),
@@ -4345,7 +4364,7 @@ class _PetSwitch extends StatelessWidget {
                     for (var i = 0; i < pets.length; i++) ...[
                       _PetFilterAvatarTile(
                         name: pets[i].name,
-                        avatarPath: pets[i].avatarPath,
+                        avatarUrl: pets[i].avatarUrl,
                         selected: pets[i].id == selectedId,
                         onTap: () => onSelect(pets[i].id),
                       ),
@@ -4417,10 +4436,11 @@ class _PetHeaderCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               ClipOval(
-                child: Image.asset(
-                  pet.avatarPath,
+                child: AppImage(
+                  url: pet.avatarUrl,
                   width: 64,
                   height: 64,
+                  memCacheWidth: 128,
                   fit: BoxFit.cover,
                 ),
               ),

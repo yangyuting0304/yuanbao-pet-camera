@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:pet_camera/app/app_image.dart';
 import 'package:pet_camera/app/mingcute_icons.dart';
 import 'package:pet_camera/app/tokens.dart';
 import 'package:pet_camera/data/ai_portrait_service.dart';
@@ -121,6 +122,6 @@ class AppPhotoPreviewPanel extends StatelessWidget {
       return Image.memory(source!.bytes!, fit: BoxFit.cover);
     }
 
-    return Image.asset(source!.assetPath!, fit: BoxFit.cover);
+    return AppImage(url: source!.url!, fit: BoxFit.cover);
   }
 }

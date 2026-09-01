@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:html'
-    as html; // Web 端用 blob URL 播放用户选取的视频/音频（仅 Web 演示端，Android 端接入时需改文件源）
 import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
@@ -10,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pet_camera/app/app_back_button.dart';
 import 'package:pet_camera/app/app_primary_action_button.dart';
 import 'package:pet_camera/app/app_segmented_toggle.dart';
+import 'package:pet_camera/app/media_platform.dart';
 import 'package:pet_camera/app/mingcute_icons.dart';
 import 'package:pet_camera/app/tokens.dart';
 import 'package:pet_camera/data/short_videos.dart';
@@ -81,7 +80,7 @@ const _captionStyles = <_CaptionStyle>[
 ];
 
 /// 短片剪辑页：选视频 → 裁剪 → 加字幕 → 加配乐 → 存入短片库。
-/// Web 端用 file_picker 取字节 + blob URL 驱动 video_player / audioplayers。
+/// 跨平台：Web 走 blob URL，Android/iOS 走临时文件路径（见 MediaPlatform）。
 class ShortVideoPage extends ConsumerStatefulWidget {
   const ShortVideoPage({super.key});
   @override
@@ -137,11 +136,11 @@ class _ShortVideoPageState extends ConsumerState<ShortVideoPage> {
   }
 
   void _revoke(String? url) {
-    if (url != null && url.startsWith('blob:')) html.Url.revokeObjectUrl(url);
+    if (url != null) MediaPlatform.releaseMediaUrl(url);
   }
 
-  String _blobUrl(Uint8List bytes, String mime) =>
-      html.Url.createObjectUrlFromBlob(html.Blob(<Object>[bytes], mime));
+  Future<String> _blobUrl(Uint8List bytes, String mime) =>
+      MediaPlatform.createMediaUrl(bytes, mime);
 
   Future<void> _pickVideo() async {
     setState(() => _error = null);
@@ -154,8 +153,8 @@ class _ShortVideoPageState extends ConsumerState<ShortVideoPage> {
       if (f == null || f.bytes == null) return;
       _revoke(_videoUrl);
       _controller?.dispose();
-      final url = _blobUrl(f.bytes!, 'video/mp4');
-      final c = VideoPlayerController.networkUrl(Uri.parse(url));
+      final url = await _blobUrl(f.bytes!, 'video/mp4');
+      final c = MediaPlatform.videoController(url);
       await c.initialize();
       c.addListener(_onVideoTick);
       if (mounted) {
@@ -183,10 +182,11 @@ class _ShortVideoPageState extends ConsumerState<ShortVideoPage> {
       final f = res?.files.firstOrNull;
       if (f == null || f.bytes == null) return;
       _revoke(_musicUrl);
+      final url = await MediaPlatform.createMediaUrl(f.bytes!, 'audio/mpeg');
       if (mounted) {
         setState(() {
           _musicBytes = f.bytes;
-          _musicUrl = _blobUrl(f.bytes!, 'audio/mpeg');
+          _musicUrl = url;
           _musicName = f.name;
         });
       }
@@ -218,7 +218,7 @@ class _ShortVideoPageState extends ConsumerState<ShortVideoPage> {
     await c.play();
     if (_musicUrl != null) {
       try {
-        await _ensureAudio().play(UrlSource(_musicUrl!), volume: 0.6);
+        await _ensureAudio().play(MediaPlatform.audioSource(_musicUrl!), volume: 0.6);
       } catch (_) {}
     }
     if (mounted) setState(() => _playing = true);
@@ -1035,15 +1035,11 @@ class _PlaybackDialogState extends State<_PlaybackDialog> {
 
   Future<void> _init() async {
     final e = widget.edit;
-    _videoUrl = html.Url.createObjectUrlFromBlob(
-      html.Blob(<Object>[e.videoBytes], e.mimeType),
-    );
+    _videoUrl = await MediaPlatform.createMediaUrl(e.videoBytes, e.mimeType);
     if (e.musicBytes != null) {
-      _musicUrl = html.Url.createObjectUrlFromBlob(
-        html.Blob(<Object>[e.musicBytes!], 'audio/mpeg'),
-      );
+      _musicUrl = await MediaPlatform.createMediaUrl(e.musicBytes!, 'audio/mpeg');
     }
-    final c = VideoPlayerController.networkUrl(Uri.parse(_videoUrl!));
+    final c = MediaPlatform.videoController(_videoUrl!);
     _c = c;
     await c.initialize();
     _durationMs = c.value.duration.inMilliseconds;
@@ -1072,7 +1068,7 @@ class _PlaybackDialogState extends State<_PlaybackDialog> {
     await c.play();
     if (_musicUrl != null) {
       try {
-        await _ensureAudio().play(UrlSource(_musicUrl!), volume: 0.6);
+        await _ensureAudio().play(MediaPlatform.audioSource(_musicUrl!), volume: 0.6);
       } catch (_) {}
     }
     if (mounted) setState(() => _playing = true);
@@ -1088,10 +1084,8 @@ class _PlaybackDialogState extends State<_PlaybackDialog> {
   void dispose() {
     _c?.dispose();
     _audio?.dispose();
-    if (_videoUrl != null && _videoUrl!.startsWith('blob:'))
-      html.Url.revokeObjectUrl(_videoUrl!);
-    if (_musicUrl != null && _musicUrl!.startsWith('blob:'))
-      html.Url.revokeObjectUrl(_musicUrl!);
+    if (_videoUrl != null) MediaPlatform.releaseMediaUrl(_videoUrl!);
+    if (_musicUrl != null) MediaPlatform.releaseMediaUrl(_musicUrl!);
     super.dispose();
   }
 

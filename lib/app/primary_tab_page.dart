@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pet_camera/app/app_back_button.dart';
 import 'package:pet_camera/app/app_horizontal_edge_inset.dart';
+import 'package:pet_camera/app/app_image.dart';
 import 'package:pet_camera/app/app_loading_view.dart';
 import 'package:pet_camera/app/app_top_nav_bar.dart';
 import 'package:pet_camera/app/mingcute_icons.dart';
@@ -10,6 +11,7 @@ import 'package:pet_camera/app/short_video_page.dart';
 import 'package:pet_camera/app/tokens.dart';
 import 'package:pet_camera/data/captured_photos.dart';
 import 'package:pet_camera/data/models.dart';
+import 'package:pet_camera/data/seed_config.dart';
 import 'package:pet_camera/data/seed_repository.dart';
 import 'package:pet_camera/data/short_videos.dart';
 import 'package:video_player/video_player.dart';
@@ -94,13 +96,14 @@ class HomePage extends ConsumerWidget {
     'yuanbao_140.jpg',
   ];
 
-  static const List<_HomeFeature> _features = <_HomeFeature>[
+  /// 封面图走远程（SeedConfig）；示例视频仅 0.82 MB，仍随包分发。
+  static final List<_HomeFeature> _features = <_HomeFeature>[
     _HomeFeature(
       title: '毛孩写真',
       subtitle: 'AI 一键生成不同风格',
       tag: 'AI',
       icon: MingCuteIcons.magic2,
-      imagePath: 'assets/seed/photos/feat_portrait.jpg',
+      imagePath: SeedConfig.photoUrl('feat_portrait.jpg'),
       route: '/portrait',
     ),
     _HomeFeature(
@@ -108,7 +111,7 @@ class HomePage extends ConsumerWidget {
       subtitle: '选几张图就能做短片',
       tag: '视频',
       icon: MingCuteIcons.videoLine,
-      imagePath: 'assets/seed/photos/feat_video_thumb.jpg',
+      imagePath: SeedConfig.photoUrl('feat_video_thumb.jpg'),
       videoAssetPath: 'assets/seed/photos/feat_video_compressed.mp4',
       route: '/short-video',
     ),
@@ -117,7 +120,7 @@ class HomePage extends ConsumerWidget {
       subtitle: '换背景、加贴纸更轻松',
       tag: '修图',
       icon: MingCuteIcons.palette,
-      imagePath: 'assets/seed/photos/feat_retouch.jpg',
+      imagePath: SeedConfig.photoUrl('feat_retouch.jpg'),
       route: '/retouch',
     ),
     _HomeFeature(
@@ -125,7 +128,7 @@ class HomePage extends ConsumerWidget {
       subtitle: '记录体重、疫苗和趣事',
       tag: '记录',
       icon: MingCuteIcons.book,
-      imagePath: 'assets/seed/photos/feat_profile.jpg',
+      imagePath: SeedConfig.photoUrl('feat_profile.jpg'),
       route: '/pet-profile',
     ),
   ];
@@ -134,23 +137,21 @@ class HomePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final petsAsync = ref.watch(petsProvider);
     final photosAsync = ref.watch(photosProvider);
-    final recentPhotoPaths = photosAsync.maybeWhen(
+    final recentPhotoUrls = photosAsync.maybeWhen(
       // 首页“毛孩近照”只展示最近 20 张，避免首屏列表过长。
       data: (photos) => photos
           .take(20)
-          .map((photo) => photo.assetPath)
+          .map((photo) => photo.remoteUrl)
           .toList(growable: false),
-      orElse: () => _recentPhotos
-          .map((fileName) => 'assets/seed/photos/$fileName')
-          .toList(growable: false),
+      orElse: () =>
+          _recentPhotos.map(SeedConfig.photoUrl).toList(growable: false),
     );
-    final heroPreviewPaths = photosAsync.maybeWhen(
+    final heroPreviewUrls = photosAsync.maybeWhen(
       // 首屏缩略图直接复用现有相册数据，数量在卡片内部按可用宽度动态计算。
       data: (photos) =>
-          photos.map((photo) => photo.assetPath).toList(growable: false),
-      orElse: () => _recentPhotos
-          .map((fileName) => 'assets/seed/photos/$fileName')
-          .toList(growable: false),
+          photos.map((photo) => photo.remoteUrl).toList(growable: false),
+      orElse: () =>
+          _recentPhotos.map(SeedConfig.photoUrl).toList(growable: false),
     );
     final heroAlbumCount = photosAsync.maybeWhen(
       data: (photos) => photos.length,
@@ -195,7 +196,7 @@ class HomePage extends ConsumerWidget {
               ),
               child: _HomeHeroSection(
                 albumCount: heroAlbumCount,
-                previewPaths: heroPreviewPaths,
+                previewPaths: heroPreviewUrls,
                 onOpenAlbum: onOpenAlbumTab,
                 onOpenCamera: () => Navigator.pushNamed(context, '/camera'),
               ),
@@ -273,10 +274,10 @@ class HomePage extends ConsumerWidget {
                 100,
               ),
               child: _RecentPhotoStrip(
-                photos: recentPhotoPaths,
-                onTapPhoto: (assetPath) => showDialog<void>(
+                photos: recentPhotoUrls,
+                onTapPhoto: (url) => showDialog<void>(
                   context: context,
-                  builder: (_) => _HomeRecentPhotoDialog(assetPath: assetPath),
+                  builder: (_) => _HomeRecentPhotoDialog(url: url),
                 ),
               ),
             ),
@@ -613,7 +614,7 @@ class _HeroCaptureCard extends StatelessWidget {
                           Row(
                             children: [
                               for (final item in previewItems) ...[
-                                _HeroPreviewThumb(assetPath: item),
+                                _HeroPreviewThumb(url: item),
                                 const SizedBox(width: thumbGap),
                               ],
                               _HeroAlbumEntry(onTap: onOpenAlbum),
@@ -780,15 +781,20 @@ class _HeroQuickActionCard extends StatelessWidget {
 /// 首页首屏相册缩略图。
 /// 固定为 30x30 圆角 8，保持和设计稿中的缩略图尺寸一致。
 class _HeroPreviewThumb extends StatelessWidget {
-  const _HeroPreviewThumb({required this.assetPath});
+  const _HeroPreviewThumb({required this.url});
 
-  final String assetPath;
+  final String url;
 
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
-      child: Image.asset(assetPath, width: 30, height: 30, fit: BoxFit.cover),
+      child: AppImage(
+        url: url,
+        width: 30,
+        height: 30,
+        memCacheWidth: 60,
+      ),
     );
   }
 }
@@ -938,11 +944,11 @@ class _PetSnapshotAvatar extends StatelessWidget {
                 ),
               ),
               child: ClipOval(
-                child: Image.asset(
-                  pet.avatarPath,
+                child: AppImage(
+                  url: pet.avatarUrl,
                   width: 56,
                   height: 56,
-                  fit: BoxFit.cover,
+                  memCacheWidth: 112,
                 ),
               ),
             ),
@@ -1198,11 +1204,10 @@ class _FeatureCoverState extends State<_FeatureCover> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          Image.asset(
-            widget.imagePath,
+          AppImage(
+            url: widget.imagePath,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) =>
-                const ColoredBox(color: Color(0xFFF1F3F5)),
+            placeholderColor: const Color(0xFFF1F3F5),
           ),
           if (_videoReady &&
               _controller != null &&
@@ -1302,7 +1307,7 @@ class _RecentPhotoColumn extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: _RecentPhotoTile(
-              assetPath: photos[index],
+              url: photos[index],
               aspectRatio: getRatio(index),
               onTap: () => onTapPhoto(photos[index]),
             ),
@@ -1314,12 +1319,12 @@ class _RecentPhotoColumn extends StatelessWidget {
 
 class _RecentPhotoTile extends StatelessWidget {
   const _RecentPhotoTile({
-    required this.assetPath,
+    required this.url,
     required this.aspectRatio,
     required this.onTap,
   });
 
-  final String assetPath;
+  final String url;
   final double aspectRatio;
   final VoidCallback onTap;
 
@@ -1332,7 +1337,7 @@ class _RecentPhotoTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppUi.radiusCard),
         child: AspectRatio(
           aspectRatio: aspectRatio,
-          child: Image.asset(assetPath, fit: BoxFit.cover),
+          child: AppImage(url: url, fit: BoxFit.cover, memCacheWidth: 400),
         ),
       ),
     );
@@ -1341,9 +1346,9 @@ class _RecentPhotoTile extends StatelessWidget {
 
 /// 首页“毛孩近照”点击后直接在当前页预览，不再跳转到相册页。
 class _HomeRecentPhotoDialog extends StatelessWidget {
-  const _HomeRecentPhotoDialog({required this.assetPath});
+  const _HomeRecentPhotoDialog({required this.url});
 
-  final String assetPath;
+  final String url;
 
   @override
   Widget build(BuildContext context) {
@@ -1352,7 +1357,7 @@ class _HomeRecentPhotoDialog extends StatelessWidget {
       insetPadding: const EdgeInsets.all(20),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
-        child: Image.asset(assetPath, fit: BoxFit.contain),
+        child: AppImage(url: url, fit: BoxFit.contain),
       ),
     );
   }
@@ -1521,12 +1526,12 @@ class _MineProfileCard extends StatelessWidget {
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(32),
-                  child: Image.asset(
-                    firstPet?.avatarPath ??
-                        'assets/seed/photos/yuanbao_headshot.png',
+                  child: AppImage(
+                    url: firstPet?.avatarUrl ??
+                        SeedConfig.photoUrl('yuanbao_headshot.png'),
                     width: 64,
                     height: 64,
-                    fit: BoxFit.cover,
+                    memCacheWidth: 128,
                   ),
                 ),
                 const SizedBox(height: 8),
