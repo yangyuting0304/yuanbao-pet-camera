@@ -1,8 +1,38 @@
-# AI 美颜代理部署指南（阿里云 ECS / 函数计算）
+# AI 写真代理部署指南（阿里云 ECS / 函数计算）
 
-代理作用：服务端持有千问 API Key，浏览器只调本服务；源图先传腾讯云 COS 拿公网 URL（千问图生图要求输入图为公网可访问 URL），再调 `wanx2.1-imageedit` 生成美颜图，结果转 base64 回前端。
+代理作用：服务端持有百炼/千问 API Key，浏览器只调本服务，避免 key 泄露并绕过 CORS。默认走 `wan2.7-image-pro`（multimodal-generation，base64 内联图，无需 COS），兼容旧版 `wanx2.1-imageedit`。
 
-> 千问 `wanx2.1-imageedit` 免费额度：**500 张 / 激活后 180 天**，正好用于 Demo。
+## 架构说明（如何换模型）
+
+**前端协议固定不变**：前端只发 `POST /api/beautify { styleId, imageBase64 }`，后端永远返回 `{ imageBase64 }`。模型差异全部收敛在后端适配器里。
+
+```
+lib/adapter.js           适配器注册中心 —— 换模型只改这里
+lib/models/dashscope.js  DashScope/百炼 适配器（wan2.7 新格式 + wanx2.1 旧格式）
+prompts.js               风格提示词映射（styleId -> prompt）
+index.js                 HTTP 层 + 统一协议（不关心具体模型）
+```
+
+### 换模型三步
+
+1. **新建适配器文件**（如 `lib/models/openai.js`），实现统一接口：
+   ```js
+   // 输入：{ sourceBytes: Buffer, prompt: string, options?: object }
+   // 输出：{ imageBytes: Buffer, imageUrl?: string, cleanup?: () => Promise<void> }
+   function createOpenAiAdapter(env) {
+     async function generate({ sourceBytes, prompt, options }) { /* ... */ }
+     return { generate, model: 'gpt-image', format: '...' };
+   }
+   module.exports = { createOpenAiAdapter };
+   ```
+2. **在 `lib/adapter.js` 注册**：
+   ```js
+   const { createOpenAiAdapter } = require('./models/openai');
+   const ADAPTERS = { dashscope: createDashScopeAdapter, 'gpt-image': createOpenAiAdapter };
+   ```
+3. **切换**：部署时设环境变量 `MODEL=gpt-image` 即可，前端与 `index.js` 零改动。
+
+> 约定：`generate()` 必须返回结果图 `imageBytes`（Buffer），由 `index.js` 统一 base64 返回给前端。这样无论底层模型返回 URL / base64 / 其他结构，前端感知到的协议永远一致。
 
 ## 一、准备
 
@@ -13,8 +43,9 @@ cp .env.example .env   # 填入真实密钥（.env 已被 .gitignore 忽略）
 ```
 
 `.env` 必填项：
-- `DASHSCOPE_API_KEY`：千问/百炼 API Key
-- `TENCENT_COS_SECRET_ID` / `TENCENT_COS_SECRET_KEY` / `TENCENT_COS_BUCKET` / `TENCENT_COS_REGION`：腾讯云 COS（复用你已有的云存储当临时图床）
+- `DASHSCOPE_API_KEY`：百炼/千问 API Key
+- （可选）`MODEL`：模型名，默认 `wan2.7-image-pro`。配置了 `MAAS_BASE_URL` 或模型名含 `wan2.7` 时走 base64 内联（无需 COS）；否则走旧版 `wanx2.1-imageedit`，此时需要 COS：
+- （旧版可选）`TENCENT_COS_SECRET_ID` / `TENCENT_COS_SECRET_KEY` / `TENCENT_COS_BUCKET` / `TENCENT_COS_REGION`：腾讯云 COS（旧版 wanx2.1 当临时图床）
 
 本地自测：
 ```bash
@@ -69,11 +100,20 @@ server {
 
 > 无论哪种，最终给前端的 `AI_PROXY_URL` 必须是 `https://.../api/beautify`。
 
-## 三、部署到阿里云函数计算 FC（免备案 HTTPS，可选）
+## 三、通用 COS 上传（「我的创作」云存储）
+
+前端保存生成结果（图片 / 视频）时，会先调用本服务的 `POST /api/upload`：
+- 请求体：`{ dataBase64, ext?, contentType? }`
+- 服务端用 `TENCENT_COS_*` 凭证上传到 `works/` 目录（对象级公开读），返回 `{ url }`
+- 凭证只存在服务端，绝不下发到前端；未配置 COS 时该接口返回 500，前端会降级为仅本地保存
+
+`json` body 上限 80mb（覆盖成片视频 base64）。前端上传代理复用 `AI_VIDEO_PROXY_URL` / `AI_PROXY_URL` 解析出根域名。
+
+## 四、部署到阿里云函数计算 FC（免备案 HTTPS，可选）
 
 FC HTTP 触发器自带 `*.fc.aliyuncs.com` 域名、无需备案，最省心。适配要点：FC 的 HTTP 触发事件结构与 Express 不同，但**核心逻辑可复用**。最简做法是用 FC 的「自定义运行时 / 容器」直接跑这个 Express 服务（监听 `0.0.0.0:$PORT`），不写 FC 专用 handler。部署后在触发器拿到 HTTPS 地址，作为 `AI_PROXY_URL`。
 
-## 四、安全提醒
+## 五、安全提醒
 
 - `ALLOW_ORIGIN` 建议设为你的 COS 站点域名，不要长期用 `*`。
 - `.env` 切勿提交进仓库（已忽略）。

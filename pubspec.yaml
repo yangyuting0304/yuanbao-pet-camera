@@ -49,23 +49,8 @@ flutter:
     # 首页与主导航统一使用 MingCute SVG 图标资源
     - assets/icons/mingcute/
   fonts:
-    # 英文/数字：Poppins（几何无衬线，Ins 风格标配）
-    - family: Poppins
-      fonts:
-        - asset: assets/fonts/Poppins-Regular.ttf
-          weight: 400
-        - asset: assets/fonts/Poppins-Medium.ttf
-          weight: 500
-        - asset: assets/fonts/Poppins-SemiBold.ttf
-          weight: 600
-        - asset: assets/fonts/Poppins-Bold.ttf
-          weight: 700
-    # 中文：思源黑体 Noto Sans SC（干净现代，variable 字体多字重复用同一文件）
+    # 全站统一使用子集化思源黑体 Noto Sans SC（variable 字体，一次声明即可
+    # 支持全字重，避免重复声明导致 Web 端多份请求）。
     - family: Noto Sans SC
       fonts:
         - asset: assets/fonts/NotoSansSC.ttf
-          weight: 400
-        - asset: assets/fonts/NotoSansSC.ttf
-          weight: 500
-        - asset: assets/fonts/NotoSansSC.ttf
-          weight: 700

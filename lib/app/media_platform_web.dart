@@ -18,3 +18,14 @@ VideoPlayerController videoController(String url) =>
     VideoPlayerController.networkUrl(Uri.parse(url));
 
 Source audioSource(String url) => UrlSource(url);
+
+/// 浏览器下载：blob URL + <a download> 触发保存。
+Future<void> downloadBytes(Uint8List bytes, String filename) async {
+  final blob = html.Blob(<Object>[bytes]);
+  final url = html.Url.createObjectUrlFromBlob(blob);
+  final anchor = html.AnchorElement(href: url)..download = filename;
+  html.document.body!.append(anchor);
+  anchor.click();
+  anchor.remove();
+  html.Url.revokeObjectUrl(url);
+}

@@ -1,11 +1,11 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pet_camera/app/ai_video_page.dart';
 import 'package:pet_camera/app/primary_tab_page.dart';
 import 'package:pet_camera/app/tokens.dart';
 import 'package:pet_camera/app/pages.dart';
 import 'package:pet_camera/app/retouch_page.dart';
-import 'package:pet_camera/app/short_video_page.dart';
 import 'package:pet_camera/data/app_settings.dart';
 
 class PetCameraApp extends ConsumerWidget {
@@ -30,7 +30,7 @@ class PetCameraApp extends ConsumerWidget {
         '/mine': (c) => const MinePage(),
         '/camera': (c) => const CameraPage(),
         '/portrait': (c) => const PortraitPage(),
-        '/short-video': (c) => const ShortVideoPage(),
+        '/ai-video': (c) => const AiVideoPage(),
         '/retouch': (c) => const RetouchPage(),
         '/pet-profile': (c) => const PetProfilePage(),
         '/settings': (c) => const SettingsPage(),
@@ -61,8 +61,7 @@ class PetCameraApp extends ConsumerWidget {
     return ThemeData(
       useMaterial3: true,
       brightness: brightness,
-      fontFamily: 'Poppins',
-      fontFamilyFallback: const ['Noto Sans SC'],
+      fontFamily: 'Noto Sans SC',
       scaffoldBackgroundColor: tokens.bgBase,
       appBarTheme: AppBarTheme(
         backgroundColor: tokens.surface,

@@ -26,37 +26,43 @@ const List<PortraitStyle> kPortraitStyles = <PortraitStyle>[
     id: 'oil',
     name: '油画',
     icon: LucideIcons.palette,
-    prompt: '一幅油画风格的宠物猫肖像，细腻笔触，暖色调，古典光影，背景虚化',
+    prompt:
+        'Oil portrait on linen canvas. Thick impasto brushstrokes, visible palette knife texture, Rembrandt-style chiaroscuro lighting from upper left, strong tonal contrast. Warm amber/golden hues with deep burnt umber shadows. Muted dark velvet backdrop with shallow bokeh. Strictly preserve the subject\'s original facial geometry, exact coat color, and physical posture \u2013 no anthropomorphism. Photorealistic rendering, canvas grain visible.',
   ),
   PortraitStyle(
     id: 'watercolor',
     name: '水彩',
     icon: LucideIcons.brush,
-    prompt: '水彩画风格的宠物猫，清新通透，留白意境，淡彩晕染',
+    prompt:
+        'Watercolor painting on cold-pressed paper. Visible paper tooth, transparent washes with blooming edges. High-key pastel palette (pale blue, rose, mint), generous white negative space. Loose brushwork, wet-on-wet diffusion. Gentle morning light. The subject\'s unique facial markings, fur color zones, and original stance must be exactly replicated. Clean white border, minimal background.',
   ),
   PortraitStyle(
     id: 'anime',
     name: '动漫',
     icon: LucideIcons.sparkles,
-    prompt: '动漫二次元风格的宠物猫，大眼睛，可爱，赛璐璐上色',
+    prompt:
+        'Japanese anime cel-shaded illustration. Clean ink outlines, large expressive eyes with star-shaped highlights. Slightly chibi proportions, soft cel gradients on shadows. Vibrant pastel colors against a dreamy sky background. Maintain the subject\'s ear shape, muzzle length, and distinct color patches \u2013 stylize only rendering, never morphology.',
   ),
   PortraitStyle(
     id: 'vintage',
     name: '复古胶片',
     icon: LucideIcons.camera,
-    prompt: '复古胶片风格的宠物猫照片，颗粒感，暖黄褪色，柯达色调',
+    prompt:
+        '1980s analog film photography \u2013 Kodak Portra tone. Warm amber/yellow fade, organic film grain, subtle light leaks in corner, heavy vignette. Soft halation around highlights, low contrast, nostalgic atmosphere. The subject\'s facial structure, coat texture, and exact positioning must remain photorealistically intact \u2013 no artistic distortion.',
   ),
   PortraitStyle(
     id: 'royal',
     name: '国风',
     icon: LucideIcons.crown,
-    prompt: '国风工笔画风格的宠物猫，典雅，牡丹与祥云背景，绢本设色',
+    prompt:
+        'Traditional Chinese Gongbi fine-brush painting on silk. Iron-wire linework defining contours, natural mineral pigments (cinnabar, malachite). Decorative peony blossoms, Xiangyun clouds, Ming-style seal and calligraphy. Asymmetric balanced composition with negative space. The subject\'s muzzle proportion, ear set, and distinctive markings must be rendered with accuracy \u2013 only the medium changes.',
   ),
   PortraitStyle(
     id: 'festive',
     name: '节日',
     icon: LucideIcons.gift,
-    prompt: '节日主题的宠物猫，圣诞暖灯与礼物装饰，温馨欢乐氛围',
+    prompt:
+        'Cozy festive indoor scene with cinematic lighting. Warm Christmas tree fairy lights (bokeh in background), gift boxes in crimson, emerald, gold. Soft falling snowflakes, firelight warmth. Volumetric light rays. The subject\'s facial features, full coat color, and posture are non-negotiable \u2013 maintain realistic proportions amid the holiday setting.',
   ),
 ];
 

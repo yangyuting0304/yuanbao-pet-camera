@@ -44,3 +44,11 @@ VideoPlayerController videoController(String url) =>
     VideoPlayerController.file(File(url));
 
 Source audioSource(String url) => DeviceFileSource(url);
+
+/// 原生端下载：写入系统临时目录（Web 走浏览器下载；原生保存对话框后续可接
+/// file_picker.saveFile 提升体验）。
+Future<void> downloadBytes(Uint8List bytes, String filename) async {
+  final dir = await Directory.systemTemp.createTemp('yuanbao_dl_');
+  final file = File('${dir.path}/$filename');
+  await file.writeAsBytes(bytes, flush: true);
+}

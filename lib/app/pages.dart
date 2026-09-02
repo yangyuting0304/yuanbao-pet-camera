@@ -17,6 +17,7 @@ import 'package:pet_camera/app/app_photo_preview_panel.dart';
 import 'package:pet_camera/app/app_back_button.dart';
 import 'package:pet_camera/app/app_loading_view.dart';
 import 'package:pet_camera/app/app_top_nav_bar.dart';
+import 'package:pet_camera/app/media_platform.dart';
 import 'package:pet_camera/app/mingcute_icons.dart';
 import 'package:pet_camera/app/tokens.dart';
 import 'package:pet_camera/data/ai_portrait_service.dart';
@@ -27,6 +28,7 @@ import 'package:pet_camera/data/models.dart';
 import 'package:pet_camera/data/seed_config.dart';
 import 'package:pet_camera/data/seed_repository.dart';
 import 'package:pet_camera/data/growth_records.dart';
+import 'package:pet_camera/data/library_service.dart';
 
 /// 统一页面外壳：二级页顶栏统一提供返回入口。
 class _Shell extends StatelessWidget {
@@ -584,12 +586,12 @@ final _featureCards = [
   _FeatCardData(
     iconName: MingCuteIcons.videoLine,
     title: '一键成片',
-    desc: '选几张照片，AI自动配乐剪辑成短视频。',
-    tag: '视频',
+    desc: '一张照片让毛孩动起来，AI 生成短视频。',
+    tag: 'AI 视频',
     imageUrl: SeedConfig.photoUrl('feat_video_thumb.jpg'), // ★ 视频缩略图
     videoAssetPath:
         'assets/seed/photos/feat_video_compressed.mp4', // ★ 压缩版(0.82MB,云端秒加载)
-    route: '/short-video',
+    route: '/ai-video',
     align: Alignment(0.5, 0.15), // ★ 焦点下移（避免顶部杯子/空白过多）
   ),
   _FeatCardData(
@@ -1501,7 +1503,23 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       final x = await _controller!.takePicture();
       final rawBytes = await x.readAsBytes();
       final bytes = await _composePhotoToSelectedRatio(rawBytes);
+      // 本地即时展示。
       ref.read(capturedPhotosProvider.notifier).add(bytes);
+      // 异步上传 COS 并登记 works.json（失败不阻断拍摄流程）。
+      unawaited(() async {
+        try {
+          await ref
+              .read(worksProvider.notifier)
+              .add(
+                bytes: bytes,
+                type: LibraryType.capturedPhoto,
+                ext: 'jpg',
+                label: '拍摄照片',
+              );
+        } catch (e) {
+          debugPrint('[拍照] 上传 COS 失败：$e');
+        }
+      }());
       setState(() {
         _captured = true;
         _lastBytes = bytes;
@@ -1598,7 +1616,7 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         if (mounted) {
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(const SnackBar(content: Text('已存入短片库，去「一键成片」加字幕配乐')));
+          ).showSnackBar(const SnackBar(content: Text('视频已存入短片库')));
         }
       } catch (e) {
         if (mounted) {
@@ -2456,7 +2474,15 @@ class _PortraitPageState extends ConsumerState<PortraitPage> {
             resultBytes: result.imageBytes,
             demo: result.demo,
             onSave: () async {
-              ref.read(capturedPhotosProvider.notifier).add(result.imageBytes);
+              // 上传 COS + 登记 works.json（「我的创作」）。
+              await ref
+                  .read(worksProvider.notifier)
+                  .add(
+                    bytes: result.imageBytes,
+                    type: LibraryType.createdImage,
+                    ext: 'jpg',
+                    label: 'AI 写真',
+                  );
             },
           ),
         ),
@@ -3099,15 +3125,28 @@ class AlbumPage extends ConsumerWidget {
     final photosAsync = ref.watch(photosProvider);
     final petsAsync = ref.watch(petsProvider);
     final captured = ref.watch(capturedPhotosProvider);
+    // 作品清单来自 COS（works.json）；loading/error 时降级为空，不影响种子图展示。
+    final works = ref.watch(worksProvider).value ?? const <LibraryItem>[];
+    // 已上传云端的拍摄照片并入「照片」分组。
+    final cloudPhotos =
+        works.where((w) => w.type == LibraryType.capturedPhoto).toList();
+    // 编辑图 / AI 生成图 / 视频 归入「我的创作」。
+    final createdItems = works.where((w) => w.isCreatedGroup).toList();
     final mergedItemsAsync = photosAsync.when(
       loading: () => const AppLoadingView(),
       error: (e, _) => Center(child: Text('加载失败：$e')),
       data: (photos) => petsAsync.when(
         loading: () => const AppLoadingView(),
-        error: (_, __) =>
-            _AlbumView(items: _mergePhotos(photos, captured), pets: []),
-        data: (pets) =>
-            _AlbumView(items: _mergePhotos(photos, captured), pets: pets),
+        error: (_, __) => _AlbumView(
+          items: _mergePhotos(photos, captured, cloudPhotos),
+          pets: [],
+          createdWorks: createdItems,
+        ),
+        data: (pets) => _AlbumView(
+          items: _mergePhotos(photos, captured, cloudPhotos),
+          pets: pets,
+          createdWorks: createdItems,
+        ),
       ),
     );
 
@@ -3190,7 +3229,13 @@ class _AlbumItem {
   String get monthKey => '${takenAt.year}年${takenAt.month}月';
 }
 
-List<_AlbumItem> _mergePhotos(List<Photo> seed, List<CapturedPhoto> captured) =>
+/// 合并「种子图 + 本地拍摄 + 云端拍摄作品」为相册照片分组。
+/// [cloudPhotos] 来自 works.json 的 captured_photo（已上传 COS，刷新后仍可见）。
+List<_AlbumItem> _mergePhotos(
+  List<Photo> seed,
+  List<CapturedPhoto> captured, [
+  List<LibraryItem> cloudPhotos = const <LibraryItem>[],
+]) =>
     <_AlbumItem>[
       for (final c in captured)
         _AlbumItem(
@@ -3199,6 +3244,14 @@ List<_AlbumItem> _mergePhotos(List<Photo> seed, List<CapturedPhoto> captured) =>
           caption: _fmtDateTime(c.takenAt),
           takenAt: c.takenAt,
           // 拍摄的照片暂不归属特定宠物（用户后续可指定）
+        ),
+      for (final w in cloudPhotos)
+        _AlbumItem(
+          source: SourcePhoto(url: w.url, caption: '拍摄照片'),
+          image: CachedNetworkImageProvider(w.url),
+          caption: _fmtDateTime(w.takenAt),
+          takenAt: w.takenAt,
+          petId: w.petId,
         ),
       for (final p in seed)
         _AlbumItem(
@@ -3215,9 +3268,14 @@ String _fmtDateTime(DateTime d) =>
     '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 
 class _AlbumView extends StatefulWidget {
-  const _AlbumView({required this.items, required this.pets});
+  const _AlbumView({
+    required this.items,
+    required this.pets,
+    required this.createdWorks,
+  });
   final List<_AlbumItem> items;
   final List<Pet> pets;
+  final List<LibraryItem> createdWorks;
 
   @override
   State<_AlbumView> createState() => _AlbumViewState();
@@ -3225,6 +3283,7 @@ class _AlbumView extends StatefulWidget {
 
 class _AlbumViewState extends State<_AlbumView> {
   bool _byTime = false;
+  bool _showCreated = false; // 「我的创作」分类
   String? _selectedPetId; // null = 全部宠物
   bool _argsLoaded = false;
 
@@ -3294,9 +3353,138 @@ class _AlbumViewState extends State<_AlbumView> {
             ),
           ),
         ),
-        // 照片网格 / 宠物分组 / 时间分组
-        if (_byTime) ..._buildTimeSlivers() else ..._buildPetSlivers(),
+        // 我的创作 / 照片网格（按宠物分组） / 时间分组
+        if (_showCreated)
+          ..._buildCreatedSlivers()
+        else if (_byTime)
+          ..._buildTimeSlivers()
+        else
+          ..._buildPetSlivers(),
       ],
+    );
+  }
+
+  /// 「我的创作」分类：应用内生成的图片 / 视频（3 列方形网格）。
+  List<Widget> _buildCreatedSlivers() {
+    final works = widget.createdWorks;
+    final t = context.tokens;
+    if (works.isEmpty) {
+      return [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(
+            AppUi.pagePadding,
+            4,
+            AppUi.pagePadding,
+            24,
+          ),
+          sliver: SliverToBoxAdapter(
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 40),
+              decoration: BoxDecoration(
+                color: t.surface,
+                borderRadius: BorderRadius.circular(AppUi.radiusCard),
+              ),
+              child: Column(
+                children: [
+                  MingCuteIcon(
+                    MingCuteIcons.photoAlbum,
+                    size: AppUi.iconLarge,
+                    color: t.textSecondary.withValues(alpha: 0.5),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'AI 创作的图片和视频会显示在这里',
+                    style: TextStyle(
+                      fontSize: AppUi.fontBody,
+                      color: t.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ];
+    }
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(
+          AppUi.pagePadding,
+          12,
+          AppUi.pagePadding,
+          24,
+        ),
+        sliver: SliverGrid(
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+          ),
+          delegate: SliverChildBuilderDelegate((context, i) {
+            final w = works[i];
+            if (w.isVideo) {
+              return GestureDetector(
+                onTap: () => _playCreatedVideo(context, w),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(AppUi.radiusCard),
+                  child: Container(
+                    color: Colors.black,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        const Center(
+                          child: MingCuteIcon(
+                            MingCuteIcons.playCircle,
+                            size: 32,
+                            color: Colors.white70,
+                          ),
+                        ),
+                        Positioned(
+                          left: 6,
+                          bottom: 6,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.55),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text(
+                              '视频',
+                              style: TextStyle(
+                                fontSize: AppUi.fontCaption,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }
+            // 作品统一以 COS 公网地址加载（刷新后仍可展示）。
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(AppUi.radiusCard),
+              child: Image(
+                image: CachedNetworkImageProvider(w.url),
+                fit: BoxFit.cover,
+              ),
+            );
+          }, childCount: works.length),
+        ),
+      ),
+    ];
+  }
+
+  void _playCreatedVideo(BuildContext context, LibraryItem work) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => _CreatedVideoDialog(work: work),
     );
   }
 
@@ -3442,7 +3630,7 @@ class _AlbumViewState extends State<_AlbumView> {
     return slivers;
   }
 
-  /// 顶部宠物筛选栏：和首页顶部宠物展示保持同一行结构。
+  /// 顶部筛选栏：「全部」+「我的创作」+ 宠物头像。
   Widget _petFilterBar() {
     final petsWithPhotos = widget.pets
         .where((p) => widget.items.any((it) => it.petId == p.id))
@@ -3452,22 +3640,39 @@ class _AlbumViewState extends State<_AlbumView> {
       height: 88,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: petsWithPhotos.length + 1,
+        itemCount: petsWithPhotos.length + 2,
         separatorBuilder: (_, __) => const SizedBox(width: AppUi.space16),
         itemBuilder: (_, index) {
           if (index == 0) {
+            // 全部：不选任何宠物、也不选「我的创作」。
             return _PetFilterAllTile(
-              selected: _selectedPetId == null,
-              onTap: () => setState(() => _selectedPetId = null),
+              selected: _selectedPetId == null && !_showCreated,
+              onTap: () => setState(() {
+                _selectedPetId = null;
+                _showCreated = false;
+              }),
+            );
+          }
+          if (index == 1) {
+            // 我的创作：应用内 AI 生成的图片 / 视频。
+            return _PetFilterCreatedTile(
+              selected: _showCreated,
+              onTap: () => setState(() {
+                _showCreated = !_showCreated;
+                if (_showCreated) _selectedPetId = null;
+              }),
             );
           }
 
-          final pet = petsWithPhotos[index - 1];
+          final pet = petsWithPhotos[index - 2];
           return _PetFilterAvatarTile(
             name: pet.name,
             avatarUrl: pet.avatarUrl,
             selected: _selectedPetId == pet.id,
-            onTap: () => setState(() => _selectedPetId = pet.id),
+            onTap: () => setState(() {
+              _selectedPetId = _selectedPetId == pet.id ? null : pet.id;
+              _showCreated = false;
+            }),
           );
         },
       ),
@@ -3776,6 +3981,63 @@ class _PetFilterAllTile extends StatelessWidget {
             const SizedBox(height: AppUi.space4),
             Text(
               '全部',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: AppUi.fontCaption,
+                height: 20 / AppUi.fontCaption,
+                fontWeight: FontWeight.w400,
+                color: selected
+                    ? const Color(0xFF000000)
+                    : const Color(0xFF999999),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 相册「分类」tab 下的子筛选：查看应用内创作（AI 成片等）。
+/// 与 _PetFilterAllTile 同结构，区别在 label 和 icon 语义。
+class _PetFilterCreatedTile extends StatelessWidget {
+  const _PetFilterCreatedTile({required this.selected, required this.onTap});
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        width: 64,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: selected
+                      ? const Color(0xFF000000)
+                      : const Color(0xFFE2E4E6),
+                  width: 1,
+                ),
+              ),
+              alignment: Alignment.center,
+              child: const MingCuteIcon(
+                MingCuteIcons.photoAlbum,
+                size: AppUi.iconLarge,
+                color: Color(0xFF000000),
+              ),
+            ),
+            const SizedBox(height: AppUi.space4),
+            Text(
+              '我的创作',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: AppUi.fontCaption,
@@ -5594,6 +5856,92 @@ class _ActionRow extends StatelessWidget {
                 MingCuteIcons.rightLine,
                 size: 20,
                 color: Color(0xFF999999),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 「我的创作」视频回放弹窗：应用内生成的视频预览。
+class _CreatedVideoDialog extends StatefulWidget {
+  const _CreatedVideoDialog({required this.work});
+  final LibraryItem work;
+
+  @override
+  State<_CreatedVideoDialog> createState() => _CreatedVideoDialogState();
+}
+
+class _CreatedVideoDialogState extends State<_CreatedVideoDialog> {
+  VideoPlayerController? _c;
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    // 视频已上传 COS，直接用远程地址播放（COS 已配置跨域规则）。
+    final c = MediaPlatform.videoController(widget.work.url);
+    _c = c;
+    await c.initialize();
+    if (mounted) setState(() => _ready = true);
+    await c.play();
+  }
+
+  @override
+  void dispose() {
+    // 远程 URL 无需释放（仅本地 blob 才需要 releaseMediaUrl）。
+    _c?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return Dialog(
+      backgroundColor: t.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppUi.radiusCard),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AspectRatio(
+                aspectRatio: 9 / 16,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black,
+                    borderRadius: BorderRadius.circular(AppUi.radiusCard),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: _ready && _c != null && _c!.value.isInitialized
+                      ? Center(child: VideoPlayer(_c!))
+                      : const Center(child: CircularProgressIndicator()),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: t.brand,
+                    foregroundColor: t.textPrimary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  child: const Text('关闭'),
+                ),
               ),
             ],
           ),

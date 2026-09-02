@@ -17,6 +17,7 @@ import 'package:pet_camera/data/ai_portrait_service.dart';
 import 'package:pet_camera/data/captured_photos.dart';
 import 'package:pet_camera/data/firered_service.dart';
 import 'package:pet_camera/data/models.dart';
+import 'package:pet_camera/data/library_service.dart';
 import 'package:pet_camera/data/seed_repository.dart';
 
 /// 宠物 P 图相册项。
@@ -171,11 +172,25 @@ class _RetouchPageState extends ConsumerState<RetouchPage> {
       final img = await boundary.toImage(pixelRatio: 2);
       final bd = await img.toByteData(format: ImageByteFormat.png);
       if (bd != null) {
-        ref.read(capturedPhotosProvider.notifier).add(bd.buffer.asUint8List());
+        final bytes = bd.buffer.asUint8List();
+        // 上传 COS + 登记 works.json（「我的创作」）；失败时本地暂存该图到相册照片分组。
+        try {
+          await ref
+              .read(worksProvider.notifier)
+              .add(
+                bytes: bytes,
+                type: LibraryType.editedPhoto,
+                ext: 'png',
+                contentType: 'image/png',
+                label: '毛孩美颜',
+              );
+        } catch (_) {
+          ref.read(capturedPhotosProvider.notifier).add(bytes);
+        }
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('已存入相册')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('已上传云端并存入相册·我的创作')),
+          );
         }
       }
     } catch (e) {
@@ -491,7 +506,15 @@ class _RetouchPageState extends ConsumerState<RetouchPage> {
             demo: res.demo,
             demoText: '演示模式：未接入 AI 服务，已回显源图。',
             onSave: () async {
-              ref.read(capturedPhotosProvider.notifier).add(res.imageBytes);
+              // 上传 COS + 登记 works.json（「我的创作」）。
+              await ref
+                  .read(worksProvider.notifier)
+                  .add(
+                    bytes: res.imageBytes,
+                    type: LibraryType.createdImage,
+                    ext: 'jpg',
+                    label: 'AI 编辑',
+                  );
             },
           ),
         ),

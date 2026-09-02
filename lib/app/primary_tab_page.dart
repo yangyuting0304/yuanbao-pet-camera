@@ -108,12 +108,12 @@ class HomePage extends ConsumerWidget {
     ),
     _HomeFeature(
       title: '一键成片',
-      subtitle: '选几张图就能做短片',
-      tag: '视频',
+      subtitle: '一张照片让毛孩动起来',
+      tag: 'AI 视频',
       icon: MingCuteIcons.videoLine,
       imagePath: SeedConfig.photoUrl('feat_video_thumb.jpg'),
       videoAssetPath: 'assets/seed/photos/feat_video_compressed.mp4',
-      route: '/short-video',
+      route: '/ai-video',
     ),
     _HomeFeature(
       title: '毛孩美颜',

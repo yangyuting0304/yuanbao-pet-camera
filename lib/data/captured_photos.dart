@@ -6,9 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// Web/Android 统一用内存态的字节流，跨页面可见；
 /// 后续接入 Drift / 系统相册(gal) 时可直接映射，无需改动 UI 层。
 class CapturedPhoto {
-  const CapturedPhoto({required this.bytes, required this.takenAt});
+  const CapturedPhoto({required this.bytes, required this.takenAt, this.url});
+
   final Uint8List bytes;
   final DateTime takenAt;
+
+  /// COS 公网地址（可选）。保存时已上传到对象存储则带出。
+  final String? url;
 }
 
 /// 拍摄照片状态：最新拍摄排在列表最前。
@@ -16,8 +20,11 @@ class CapturedPhotosNotifier extends Notifier<List<CapturedPhoto>> {
   @override
   List<CapturedPhoto> build() => const [];
 
-  void add(Uint8List bytes) {
-    state = [CapturedPhoto(bytes: bytes, takenAt: DateTime.now()), ...state];
+  void add(Uint8List bytes, {String? url}) {
+    state = [
+      CapturedPhoto(bytes: bytes, takenAt: DateTime.now(), url: url),
+      ...state,
+    ];
   }
 
   void clear() => state = const [];

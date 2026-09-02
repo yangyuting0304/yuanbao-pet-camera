@@ -16,3 +16,7 @@ VideoPlayerController videoController(String url) =>
 
 Source audioSource(String url) =>
     throw UnsupportedError('当前平台不支持短片媒体播放');
+
+Future<void> downloadBytes(Uint8List bytes, String filename) async {
+  throw UnsupportedError('当前平台不支持下载');
+}
