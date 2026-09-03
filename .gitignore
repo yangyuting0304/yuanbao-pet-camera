@@ -69,3 +69,11 @@ _denoise_*.png
 # 构建/运行日志（调试产物，不入库）
 /build_log*.txt
 /build_log*.log
+
+# 开发助手本地数据（CodeBuddy/WorkBuddy 记忆与自动化，不入库）
+.workbuddy/
+.codebuddy/
+
+# 部署打包产物（zip 体积大、含环境相关地址，随用随打，不入库）
+/deploy/*.zip
+/deploy/_pkg_*/

@@ -39,6 +39,7 @@ const COS = require('cos-nodejs-sdk-v5');
 const { resolveAdapter } = require('./lib/adapter');
 const { resolveVideoAdapter } = require('./lib/videoAdapter');
 const STYLE_PROMPTS = require('./prompts');
+const { PROMPT_OPTIMIZER } = STYLE_PROMPTS;
 
 const app = express();
 app.use(cors({ origin: process.env.ALLOW_ORIGIN || '*' }));
@@ -161,6 +162,61 @@ app.get('/healthz', (req, res) =>
 // ============ AI 一键成片（万相2.7 图生视频，异步任务） ============
 
 const MOCK_VIDEO = ['1', 'true', 'yes'].includes(String(process.env.MOCK_VIDEO || '').toLowerCase());
+
+// ============ AI 一键成片：提示词优化（文本大模型） ============
+// 复用 DASHSCOPE_API_KEY + MAAS_BASE_URL，走 DashScope 原生文本生成端点。
+// 模型默认 qwen-plus-2025-07-28（纯 LLM 快照，经实测最贴合图生视频约束：
+// 全程单角色、自动分幕、无越界道具；qwen-max 会出现多只同框、qwen3.7-plus 不存在）。
+// 可用 PROMPT_MODEL 环境变量切换（如 qwen-max / qwen-plus / qwen-turbo）。
+const PROMPT_MODEL = process.env.PROMPT_MODEL || 'qwen-plus-2025-07-28';
+
+// 用元提示词（prompts.js 的 PROMPT_OPTIMIZER）把用户简短描述扩写为图生视频提示词。
+async function optimizePrompt(userPrompt) {
+  const key = process.env.DASHSCOPE_API_KEY;
+  if (!key) throw new Error('DASHSCOPE_API_KEY 未配置');
+  const base = (process.env.MAAS_BASE_URL || 'https://dashscope.aliyuncs.com/api/v1').replace(/\/+$/, '');
+  const url = `${base}/services/aigc/text-generation/generation`;
+  const system = PROMPT_OPTIMIZER.replace('{{用户输入}}', userPrompt);
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: PROMPT_MODEL,
+      input: {
+        messages: [{ role: 'user', content: system }],
+      },
+      parameters: { result_format: 'message', temperature: 0.7, max_tokens: 2048 },
+    }),
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`提示词优化调用失败 ${resp.status} ${text}`);
+  }
+  const data = await resp.json();
+  if (data.code) {
+    throw new Error(`提示词优化业务错误：${data.code} ${data.message || ''}`);
+  }
+  const text = data.output && data.output.choices && data.output.choices[0]
+    && data.output.choices[0].message && data.output.choices[0].message.content;
+  if (!text || !String(text).trim()) throw new Error('提示词优化返回为空');
+  return String(text).trim();
+}
+
+// AI 优化：{ prompt: 用户简短场景描述 } -> { optimizedPrompt: 完整图生视频提示词 }
+app.post('/api/ai-video/optimize-prompt', async (req, res) => {
+  try {
+    const userPrompt = String((req.body || {}).prompt || '').trim();
+    if (!userPrompt) return res.status(400).json({ error: '缺少 prompt' });
+    const optimizedPrompt = await optimizePrompt(userPrompt);
+    console.log(`[ai-video][optimize] ${userPrompt.slice(0, 30)} -> ${optimizedPrompt.length} chars | model=${PROMPT_MODEL}`);
+    res.json({ optimizedPrompt });
+  } catch (e) {
+    res.status(500).json({ error: String((e && e.message) || e) });
+  }
+});
 
 // 模拟模式：内存任务表 + 静态演示视频。
 // 时序模拟真实异步：0-10s PENDING -> 10-20s RUNNING -> 20s+ SUCCEEDED。

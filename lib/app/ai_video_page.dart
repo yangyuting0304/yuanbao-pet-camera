@@ -41,6 +41,7 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
   final _promptCtrl = TextEditingController();
   final _negativeCtrl = TextEditingController(text: kAiVideoNegativePrompt);
   String? _promptError; // 提示词为空时的原处提示
+  bool _optimizing = false; // AI 优化进行中（按钮 loading）
 
   // 生成参数。
   double _duration = 8;
@@ -198,6 +199,38 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
   }
 
   // ============ 生成 ============
+
+  /// AI 优化：把输入框里的简短场景描述扩写为完整图生视频提示词，回填输入框。
+  Future<void> _optimizePrompt() async {
+    final input = _promptCtrl.text.trim();
+    if (input.isEmpty) {
+      setState(() => _promptError = '先输入一句话场景描述，再点 AI 优化');
+      return;
+    }
+    setState(() {
+      _optimizing = true;
+      _promptError = null;
+    });
+    try {
+      final optimized = await ref
+          .read(aiVideoServiceProvider)
+          .optimizePrompt(input);
+      if (!mounted) return;
+      setState(() {
+        _promptCtrl.text = optimized;
+        _optimizing = false;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('AI 已优化提示词，可点「开始生成」')));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _optimizing = false;
+        _promptError = e is AiVideoException ? e.message : '优化失败：$e';
+      });
+    }
+  }
 
   Future<void> _generate() async {
     final bytes = _imageBytes;
@@ -437,6 +470,51 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
     );
   }
 
+  /// 「AI 优化」按钮：黑色胶囊 + sparkles 图标，优化中显示 loading。
+  Widget _buildOptimizeButton(AppTokens t) {
+    return GestureDetector(
+      onTap: _optimizing ? null : _optimizePrompt,
+      child: Container(
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: _optimizing ? const Color(0xFFF6F8FA) : Colors.black,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_optimizing)
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.black,
+                ),
+              )
+            else
+              const MingCuteIcon(
+                MingCuteIcons.sparkles,
+                size: AppUi.iconSmall,
+                color: Colors.white,
+              ),
+            const SizedBox(width: 6),
+            Text(
+              _optimizing ? '优化中…' : 'AI 优化',
+              style: TextStyle(
+                fontSize: AppUi.fontCaption,
+                height: 20 / AppUi.fontCaption,
+                fontWeight: FontWeight.w500,
+                color: _optimizing ? t.textSecondary : Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildCompose(AppTokens t) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
@@ -505,14 +583,21 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
           ),
         ],
         const SizedBox(height: 24),
-        Text(
-          '选个场景，让毛孩动起来',
-          style: TextStyle(
-            fontSize: AppUi.fontHeadline,
-            height: 28 / AppUi.fontHeadline,
-            fontWeight: FontWeight.w400,
-            color: t.textPrimary,
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              '选个场景，让毛孩动起来',
+              style: TextStyle(
+                fontSize: AppUi.fontHeadline,
+                height: 28 / AppUi.fontHeadline,
+                fontWeight: FontWeight.w400,
+                color: t.textPrimary,
+              ),
+            ),
+            _buildOptimizeButton(t),
+          ],
         ),
         const SizedBox(height: 12),
         GridView.builder(
@@ -572,7 +657,7 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
             color: t.textPrimary,
           ),
           decoration: InputDecoration(
-            hintText: '也可以自己描述动作与氛围',
+            hintText: '输入一句话场景，点「AI 优化」自动扩写',
             hintStyle: TextStyle(
               fontSize: AppUi.fontBody,
               height: AppUi.lineHeight(AppUi.fontBody),

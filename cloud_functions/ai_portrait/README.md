@@ -100,7 +100,15 @@ server {
 
 > 无论哪种，最终给前端的 `AI_PROXY_URL` 必须是 `https://.../api/beautify`。
 
-## 三、通用 COS 上传（「我的创作」云存储）
+## 三、AI 一键成片：提示词优化（文本大模型）
+
+前端「AI 优化」按钮调用本服务的 `POST /api/ai-video/optimize-prompt`：
+- 请求体：`{ prompt: "踢足球" }`（用户输入的简短场景描述）
+- 服务端用元提示词（`prompts.js` 的 `PROMPT_OPTIMIZER`）替换 `{{用户输入}}` 后，调文本大模型扩写
+- 响应：`{ optimizedPrompt: "完整图生视频提示词" }`
+- 复用 `DASHSCOPE_API_KEY` + `MAAS_BASE_URL`（DashScope 原生 text-generation 端点）；模型默认 `qwen-plus-2025-07-28`（实测最贴合图生视频约束），可用环境变量 `PROMPT_MODEL` 切换（如 `qwen-max` / `qwen-plus` / `qwen-turbo`）
+
+## 四、通用 COS 上传（「我的创作」云存储）
 
 前端保存生成结果（图片 / 视频）时，会先调用本服务的 `POST /api/upload`：
 - 请求体：`{ dataBase64, ext?, contentType? }`
@@ -109,11 +117,11 @@ server {
 
 `json` body 上限 80mb（覆盖成片视频 base64）。前端上传代理复用 `AI_VIDEO_PROXY_URL` / `AI_PROXY_URL` 解析出根域名。
 
-## 四、部署到阿里云函数计算 FC（免备案 HTTPS，可选）
+## 五、部署到阿里云函数计算 FC（免备案 HTTPS，可选）
 
 FC HTTP 触发器自带 `*.fc.aliyuncs.com` 域名、无需备案，最省心。适配要点：FC 的 HTTP 触发事件结构与 Express 不同，但**核心逻辑可复用**。最简做法是用 FC 的「自定义运行时 / 容器」直接跑这个 Express 服务（监听 `0.0.0.0:$PORT`），不写 FC 专用 handler。部署后在触发器拿到 HTTPS 地址，作为 `AI_PROXY_URL`。
 
-## 五、安全提醒
+## 六、安全提醒
 
 - `ALLOW_ORIGIN` 建议设为你的 COS 站点域名，不要长期用 `*`。
 - `.env` 切勿提交进仓库（已忽略）。
