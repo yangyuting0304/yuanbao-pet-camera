@@ -97,6 +97,23 @@
       }
     });
   </script>
-  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    // 显式加载（替代 flutter_bootstrap.js 内联调用）：
+    // 1) canvasKitBaseUrl 指向产物内自带的 canvaskit/ 目录 —— 默认会从
+    //    www.gstatic.com（Google CDN）下载渲染引擎，国内网络直接断连，
+    //    导致 release 页白屏无法进入（debug 模式不用 CanvasKit 所以前期未暴露）。
+    // 2) 相对路径随 --base-href 解析，本地/生产（COS 子路径）均适用。
+    {{flutter_js}}
+    {{flutter_build_config}}
+
+    _flutter.loader.load({
+      config: {
+        canvasKitBaseUrl: "canvaskit",
+      },
+      serviceWorkerSettings: {
+        serviceWorkerVersion: {{flutter_service_worker_version}},
+      },
+    });
+  </script>
 </body>
 </html>
