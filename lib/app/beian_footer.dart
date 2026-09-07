@@ -13,6 +13,13 @@ class BeianFooter extends StatelessWidget {
   /// 工信部备案管理系统
   static const String beianUrl = 'https://beian.miit.gov.cn/';
 
+  /// 公安机关备案号
+  static const String gonganNumber = '粤公网安备44030002016568号';
+
+  /// 全国互联网安全管理服务平台
+  static const String gonganUrl =
+      'https://www.beian.gov.cn/portal/registerSystemInfo?recordcode=44030002016568';
+
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
@@ -41,6 +48,24 @@ class BeianFooter extends StatelessWidget {
               onTap: () => launchUrl(Uri.parse(beianUrl)),
               child: Text(
                 beianNumber,
+                style: TextStyle(
+                  fontSize: AppUi.fontCaption,
+                  color: tokens.brand,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
+            Text(
+              '|',
+              style: TextStyle(
+                fontSize: AppUi.fontCaption,
+                color: tokens.textSecondary,
+              ),
+            ),
+            InkWell(
+              onTap: () => launchUrl(Uri.parse(gonganUrl)),
+              child: Text(
+                gonganNumber,
                 style: TextStyle(
                   fontSize: AppUi.fontCaption,
                   color: tokens.brand,

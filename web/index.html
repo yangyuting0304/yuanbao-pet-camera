@@ -71,6 +71,11 @@
       color: #666666;
     }
     #app-loading.is-slow .slow-tip { display: block; }
+    #app-loading .beian-static {
+      position: absolute; bottom: 16px; left: 0; right: 0;
+      text-align: center; font-size: 12px; color: #8B6FC4;
+    }
+    #app-loading .beian-static a { color: #8B6FC4; text-decoration: none; }
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
@@ -79,6 +84,11 @@
     <div class="spinner"></div>
     <div class="txt">元宝拍拍加载中…</div>
     <div class="slow-tip">手机首次打开需要下载较大的预览资源，请稍等几秒；如果 15 秒后还没进入，请刷新一次。</div>
+    <div class="beian-static">
+      © 2026 杨玉婷作品集 |
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">粤ICP备2026033457号-2</a> |
+      <a href="https://www.beian.gov.cn/portal/registerSystemInfo?recordcode=44030002016568" target="_blank" rel="noopener">粤公网安备44030002016568号</a>
+    </div>
   </div>
   <script>
     // Flutter 首帧渲染后移除启动加载层，避免它继续遮挡页面。
