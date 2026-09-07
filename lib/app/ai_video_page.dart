@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:pet_camera/app/app_back_button.dart';
 import 'package:pet_camera/app/app_primary_action_button.dart';
+import 'package:pet_camera/app/ai_video_result_page.dart'
+    show AiVideoResultActionsBar, AiVideoResultView;
 import 'package:pet_camera/app/media_platform.dart';
 import 'package:pet_camera/app/mingcute_icons.dart';
 import 'package:pet_camera/app/short_video_page.dart' show ShortVideoLibraryPage;
@@ -15,7 +17,8 @@ import 'package:pet_camera/data/captured_photos.dart';
 import 'package:pet_camera/data/models.dart';
 import 'package:pet_camera/data/library_service.dart';
 import 'package:pet_camera/data/seed_repository.dart';
-import 'package:video_player/video_player.dart';
+import 'package:pet_camera/data/task_center.dart';
+import 'package:pet_camera/data/task_store.dart';
 
 const _fieldBorderColor = Color(0xFFE2E4E6);
 
@@ -50,18 +53,71 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
   // 生成结果与错误。
   AiVideoResult? _result;
   String? _error;
+  bool _downloading = false; // 下载中（/api/ai-video/video）
+  bool _saving = false; // 保存中（/api/upload）
 
-  // 结果预览播放器。
-  VideoPlayerController? _player;
-  String? _previewUrl;
-  bool _playing = false;
+  @override
+  void initState() {
+    super.initState();
+    // 调试回放入口：URL 带 ?debugTaskId=xxx 时登记该任务（零费用），
+    // 既在本页直接回放，也会出现在顶部「当前任务」入口里。
+    // 用法：http://<host>:8090/?debugTaskId=<taskId>
+    final debugTaskId = Uri.base.queryParameters['debugTaskId']?.trim();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (debugTaskId != null && debugTaskId.isNotEmpty) {
+        ref.read(taskCenterProvider.notifier).debugSeed(debugTaskId);
+        _debugReplay(debugTaskId);
+        return;
+      }
+      _warnUnfinishedTask();
+    });
+  }
+
+  /// 本地还有未闭环任务时提醒：继续生成会丢弃它，引导用户先处理。
+  void _warnUnfinishedTask() {
+    final task = ref.read(taskCenterProvider).task;
+    if (task == null || task.stage.finished) return;
+    final content = switch (task.stage) {
+      TaskStage.generating =>
+        '有一个视频正在生成中。现在生成新视频会丢弃它，建议先等它生成完。',
+      TaskStage.succeeded =>
+        '上次生成的视频还没查看和保存。现在生成新视频会丢弃它，建议先去处理。',
+      _ => '上次生成的视频看过但还没保存。现在生成新视频会丢弃它，建议先保存或下载。',
+    };
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('有视频任务正在进行'),
+        content: Text(content),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              '仍要生成',
+              style: TextStyle(color: context.tokens.textSecondary),
+            ),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.pushNamed(context, '/ai-video-result');
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: context.tokens.brand,
+              foregroundColor: context.tokens.textPrimary,
+            ),
+            child: const Text('去处理'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void dispose() {
-    _player?.dispose();
     _promptCtrl.dispose();
     _negativeCtrl.dispose();
-    if (_previewUrl != null) MediaPlatform.releaseMediaUrl(_previewUrl!);
     super.dispose();
   }
 
@@ -255,22 +311,30 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
       _promptError = null;
       _error = null;
     });
+    final service = ref.read(aiVideoServiceProvider);
+    final req = AiVideoRequest(
+      imageBytes: bytes,
+      prompt: prompt,
+      negativePrompt: _negativeCtrl.text.trim(),
+      duration: _duration.round(),
+      watermark: _watermark,
+    );
     try {
-      final result = await ref.read(aiVideoServiceProvider).generate(
-        AiVideoRequest(
-          imageBytes: bytes,
-          prompt: prompt,
-          negativePrompt: _negativeCtrl.text.trim(),
-          duration: _duration.round(),
-          watermark: _watermark,
-        ),
-      );
+      // 演示模式（未配置代理）：本地模拟，不产生 taskId，不进任务中心。
+      final AiVideoResult result;
+      if (AiVideoService.isDemo) {
+        result = await service.generateDemo(req);
+      } else {
+        // 真实模式：提交给任务中心并等待；即便中途退出页面，
+        // 轮询也在 App 级继续，结果可从顶部「当前任务」入口找回。
+        // 若本地还有未闭环旧任务，中心会先丢弃它（进入页面时已弹窗提示）。
+        result = await ref.read(taskCenterProvider.notifier).submitVideo(req);
+      }
       if (!mounted) return;
       setState(() {
         _result = result;
         _phase = _Phase.result;
       });
-      _initPreview(result);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -280,48 +344,59 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
     }
   }
 
-  /// 结果页预览：blob URL + video_player。
-  Future<void> _initPreview(AiVideoResult result) async {
-    _player?.dispose();
-    if (_previewUrl != null) MediaPlatform.releaseMediaUrl(_previewUrl!);
-    final url = await MediaPlatform.createMediaUrl(
-      result.videoBytes,
-      'video/mp4',
+  /// 丢弃当前任务并回到表单（底部「丢弃这个视频」）。
+  Future<void> _confirmDiscard() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('丢弃这个视频？'),
+        content: const Text('丢弃后本次生成结果将不再保留，需要重新生成（会再次消耗额度）。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('丢弃'),
+          ),
+        ],
+      ),
     );
+    if (ok != true) return;
+    ref.read(taskCenterProvider.notifier).discard();
     if (!mounted) return;
-    final c = MediaPlatform.videoController(url);
-    await c.initialize();
-    if (!mounted) return;
-    setState(() {
-      _previewUrl = url;
-      _player = c;
-    });
-    c.play();
-    setState(() => _playing = true);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('已丢弃该视频')));
+    _resetForRegenerate();
   }
 
-  void _togglePlay() {
-    final c = _player;
-    if (c == null || !c.value.isInitialized) return;
-    if (_playing) {
-      c.pause();
-      setState(() => _playing = false);
-    } else {
-      c.play();
-      setState(() => _playing = true);
+  /// 取得可用的视频字节：
+  /// - 原生端 submitVideo 已预取字节，直接用 result.videoBytes；
+  /// - Web 端为流式预览未下载，点「下载/保存」时按需经代理拉取。
+  Future<Uint8List> _ensureVideoBytes(AiVideoResult result) async {
+    if (result.videoBytes.isNotEmpty) return result.videoBytes;
+    if (result.demo) {
+      throw const AiVideoException('演示视频不支持保存');
     }
+    return ref.read(aiVideoServiceProvider).fetchVideoBytes(result.taskId);
   }
 
   /// 下载视频到用户本地（Web 触发浏览器下载）。
   Future<void> _download() async {
     final result = _result;
-    if (result == null) return;
+    if (result == null || _downloading || _saving) return;
+    setState(() => _downloading = true);
     try {
+      final bytes = await _ensureVideoBytes(result);
       final stamp = DateTime.now().millisecondsSinceEpoch;
       await MediaPlatform.downloadBytes(
-        result.videoBytes,
+        bytes,
         'yuanbao_video_$stamp.mp4',
       );
+      // 已下载 = 任务闭环，顶部「当前任务」入口不再提醒。
+      ref.read(taskCenterProvider.notifier).markProcessed();
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -333,6 +408,8 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
           context,
         ).showSnackBar(SnackBar(content: Text('下载失败：$e')));
       }
+    } finally {
+      if (mounted) setState(() => _downloading = false);
     }
   }
 
@@ -340,34 +417,23 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
   /// 先上传到 COS 拿到公网 URL，再存入「我的创作」分类。
   Future<void> _saveToAlbum() async {
     final result = _result;
-    if (result == null) return;
+    if (result == null || _downloading || _saving) return;
+    setState(() => _saving = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-              ),
-              const SizedBox(width: 12),
-              const Text('正在上传到云端…'),
-            ],
-          ),
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      // Web 端可能尚未下载字节，先按需拉取再上传。
+      final bytes = await _ensureVideoBytes(result);
       // 步骤 1+2：上传 COS 并登记 works.json（「我的创作」）。
       await ref
           .read(worksProvider.notifier)
           .add(
-            bytes: result.videoBytes,
+            bytes: bytes,
             type: LibraryType.createdVideo,
             ext: 'mp4',
             label: _promptCtrl.text.trim(),
           );
+      // 已保存到相册 = 任务闭环，顶部「当前任务」入口不再提醒。
+      ref.read(taskCenterProvider.notifier).markProcessed();
       messenger
         ..hideCurrentSnackBar()
         ..showSnackBar(
@@ -379,16 +445,67 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
       messenger
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text('保存失败：$e')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
-  void _resetForRegenerate() {
-    _player?.dispose();
-    if (_previewUrl != null) MediaPlatform.releaseMediaUrl(_previewUrl!);
+  /// 调试回放：用已有 taskId 直接进结果页（零费用，验证播放链路）。
+  /// 同时把该 taskId 登记进任务中心，方便验证顶部「当前任务」入口。
+  Future<void> _debugReplay(String taskId) async {
+    ref.read(taskCenterProvider.notifier).debugSeed(taskId);
     setState(() {
-      _player = null;
-      _previewUrl = null;
-      _playing = false;
+      _phase = _Phase.generating;
+      _error = null;
+    });
+    try {
+      final result = await ref.read(aiVideoServiceProvider).replayTask(taskId);
+      if (!mounted) return;
+      setState(() {
+        _result = result;
+        _phase = _Phase.result;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _phase = _Phase.compose;
+        _error = '回放失败：${e is AiVideoException ? e.message : e}';
+      });
+    }
+  }
+
+  /// 长按页面标题弹出 taskId 输入框（手机上比敲 URL 方便）。
+  void _showDebugReplayDialog() {
+    final ctrl = TextEditingController();
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('调试回放（零费用）'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: '输入已成功任务的 taskId'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              final id = ctrl.text.trim();
+              Navigator.pop(ctx);
+              if (id.isNotEmpty) _debugReplay(id);
+            },
+            child: const Text('回放'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _resetForRegenerate() {
+    setState(() {
       _result = null;
       _phase = _Phase.compose;
     });
@@ -405,13 +522,16 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
         toolbarHeight: 44,
         leading: AppBackButton(onTap: () => Navigator.pop(context)),
         centerTitle: true,
-        title: Text(
-          'AI 一键成片',
-          style: TextStyle(
-            fontSize: AppUi.fontTitle,
-            height: AppUi.lineHeight(AppUi.fontTitle),
-            fontWeight: FontWeight.w700,
-            color: t.textPrimary,
+        title: GestureDetector(
+          onLongPress: _showDebugReplayDialog,
+          child: Text(
+            'AI 一键成片',
+            style: TextStyle(
+              fontSize: AppUi.fontTitle,
+              height: AppUi.lineHeight(AppUi.fontTitle),
+              fontWeight: FontWeight.w700,
+              color: t.textPrimary,
+            ),
           ),
         ),
         backgroundColor: t.surface,
@@ -457,15 +577,26 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
           isLoading: true,
           onPressed: null,
         ),
-        _Phase.result => _ResultActionsBar(
+        _Phase.result => AiVideoResultActionsBar(
           onDownload: _download,
           onSave: _saveToAlbum,
+          onDiscard: _confirmDiscard,
+          downloading: _downloading,
+          saving: _saving,
         ),
       },
       body: switch (_phase) {
         _Phase.compose => _buildCompose(t),
         _Phase.generating => _buildGenerating(t),
-        _Phase.result => _buildResult(t),
+        _Phase.result => AiVideoResultView(
+          result: _result!,
+          prompt: _promptCtrl.text.trim(),
+          onDownload: _download,
+          onSave: _saveToAlbum,
+          onDiscard: _confirmDiscard,
+          onRegenerate: _resetForRegenerate,
+          onViewed: () => ref.read(taskCenterProvider.notifier).markViewed(),
+        ),
       },
     );
   }
@@ -873,77 +1004,6 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
     );
   }
 
-  Widget _buildResult(AppTokens t) {
-    final c = _player;
-    final ready = c != null && c.value.isInitialized;
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-      children: [
-        AspectRatio(
-          aspectRatio: 9 / 16,
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(AppUi.radiusCard),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: ready
-                ? Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Center(child: VideoPlayer(c)),
-                      Center(
-                        child: GestureDetector(
-                          onTap: _togglePlay,
-                          child: Container(
-                            width: 64,
-                            height: 64,
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.45),
-                              shape: BoxShape.circle,
-                            ),
-                            child: MingCuteIcon(
-                              _playing
-                                  ? MingCuteIcons.pause
-                                  : MingCuteIcons.play,
-                              size: AppUi.iconLarge,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  )
-                : const Center(child: CircularProgressIndicator()),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Text(
-          _result?.demo == true ? '演示视频（未接入真实模型）' : '生成完成',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: AppUi.fontTitle,
-            fontWeight: FontWeight.w500,
-            color: t.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          _promptCtrl.text.trim(),
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: AppUi.fontBody, color: t.textSecondary),
-        ),
-        const SizedBox(height: 16),
-        TextButton(
-          onPressed: _resetForRegenerate,
-          child: const Text(
-            '重新生成',
-            style: TextStyle(fontSize: AppUi.fontBody, color: Colors.black),
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 /// 相册选择返回：内存字节 或 远程 URL（二选一）。
@@ -1020,99 +1080,4 @@ class _AlbumPickerSheet extends StatelessWidget {
   }
 }
 
-/// 结果页底部操作栏：下载 + 保存到相册 两个并排主按钮。
-class _ResultActionsBar extends StatelessWidget {
-  const _ResultActionsBar({
-    required this.onDownload,
-    required this.onSave,
-  });
-  final VoidCallback onDownload;
-  final VoidCallback onSave;
 
-  @override
-  Widget build(BuildContext context) {
-    final t = context.tokens;
-    return Container(
-      color: t.surface,
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-      child: SafeArea(
-        top: false,
-        child: Row(
-          children: [
-            Expanded(
-              child: SizedBox(
-                height: 48,
-                child: OutlinedButton(
-                  onPressed: onDownload,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: t.textPrimary,
-                    side: const BorderSide(color: Color(0xFFE2E4E6)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      MingCuteIcon(
-                        MingCuteIcons.download,
-                        size: AppUi.iconSmall,
-                        color: Colors.black,
-                      ),
-                      SizedBox(width: 8),
-                      Text(
-                        '下载',
-                        style: TextStyle(
-                          fontSize: AppUi.fontTitle,
-                          fontWeight: FontWeight.w400,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: SizedBox(
-                height: 48,
-                child: FilledButton(
-                  onPressed: onSave,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: t.brand,
-                    foregroundColor: t.textPrimary,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      MingCuteIcon(
-                        MingCuteIcons.album,
-                        size: AppUi.iconSmall,
-                        color: Colors.black,
-                      ),
-                      SizedBox(width: 8),
-                      Text(
-                        '保存到相册',
-                        style: TextStyle(
-                          fontSize: AppUi.fontTitle,
-                          fontWeight: FontWeight.w400,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

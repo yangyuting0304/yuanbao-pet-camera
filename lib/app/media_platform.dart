@@ -38,4 +38,9 @@ abstract final class MediaPlatform {
   /// 下载字节到用户本地（Web: 浏览器下载；原生: 写临时文件）。
   static Future<void> downloadBytes(Uint8List bytes, String filename) =>
       impl.downloadBytes(bytes, filename);
+
+  /// 静音/取消静音页面上的视频元素（Web: 直接设 <video>.muted；
+  /// 原生: 空实现）。用于绕过浏览器「非静音禁止自动播放」的策略。
+  static Future<void> setVideosMuted(bool muted) =>
+      impl.setVideosMuted(muted);
 }

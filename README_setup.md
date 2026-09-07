@@ -47,8 +47,7 @@
 ## 3. 安装与解压（路径有讲究）
 
 ### 3.1 解压 Flutter
-- 解压到 **无中文、无空格** 的路径，推荐：
-  `C:\Users\yuting.yang1\dev\flutter`
+- 解压到 **无中文、无空格** 的路径（下面用 `<你的开发目录>\flutter` 指代，请替换成你自己的实际路径）：
 - 解压后确认 `...\flutter\bin\flutter.bat` 存在（被杀软隔离时，把该目录加白名单后重新解压）。
 
 ### 3.2 安装 Android Studio
@@ -60,22 +59,44 @@
 
 ---
 
-## 4. 配置 PATH 环境变量
+## 4. 配置环境变量
 
-把 Flutter 的 bin 加进系统 PATH（PowerShell 或图形界面都行）：
+> 只需配一次，**不需要任何脚本**，按下面两步手动设置即可。
+> 把示例里的 `<你的开发目录>` / `<你的SDK目录>` 换成你机器上的真实路径（要求：无中文、无空格）。
+
+### 4.1 Flutter 进 PATH
 
 **图形界面**：
-`Win + Pause`（无 Pause 用 `Win + Fn + B`）→ 系统 → 关于 → 高级系统设置 → 高级 → 环境变量 → 用户变量 `Path` → 编辑 → 新建 → 填 `C:\Users\yuting.yang1\dev\flutter\bin` → 确定。
+`Win + Pause`（无 Pause 用 `Win + Fn + B`）→ 系统 → 关于 → 高级系统设置 → 高级 → 环境变量 → 用户变量 `Path` → 编辑 → 新建 → 填 `<你的开发目录>\flutter\bin` → 确定。
 
-**或 PowerShell（管理员）**：
+**或 PowerShell（当前用户，无需管理员）**：
 ```powershell
 [Environment]::SetEnvironmentVariable(
   "Path",
-  $env:Path + ";C:\Users\yuting.yang1\dev\flutter\bin",
+  $env:Path + ";<你的开发目录>\flutter\bin",
   "User"
 )
 ```
-> 改完**重开一个终端**让 PATH 生效。
+
+### 4.2 Android SDK 路径（二选一）
+
+- **方式 A（推荐）**：写进 `android/local.properties`，Gradle 直接读，不用动系统变量：
+  ```properties
+  sdk.dir=<你的Android SDK目录>
+  flutter.sdk=<你的开发目录>\flutter
+  ```
+  > `local.properties` 是本机文件，已被 `android/.gitignore` 忽略，**不要提交**。
+- **方式 B**：新增用户环境变量 `ANDROID_HOME` = Android SDK 根目录（图形界面同上，点「新建」即可）。
+
+> 用 Android Studio 装的 SDK 通常在 `C:\Users\<用户名>\AppData\Local\Android\sdk`；
+> 不确定就打开 Android Studio → SDK Manager → **Android SDK Location** 看一眼。
+
+### 4.3 可选：Python（只有打包脚本需要）
+
+`sync_build.py`（把 `build/web` 打包成待上传目录 + zip）需要 **Python 3.8+**。
+不装也完全可以 —— 用 `scp` 或 FileZilla 直接传 `build/web` 的内容同样能部署。
+
+> 改完环境变量要**重开一个终端**才生效。
 
 ---
 
@@ -113,15 +134,14 @@ flutter doctor --android-licenses   # 一路 y 接受 Android 许可
 完整构建与运行步骤（含平台脚手架生成）见 `README_build.md`。核心三步：
 
 ```bash
-cd F:\元宝爱拍照
+cd <仓库根目录>
 
 # A. 生成平台目录（一次性，工具链生成 android/ios，不手写）
 flutter create --org com.yuanbao _scaffold
-xcopy /E /Y _scaffold\android pet_camera\android\
+xcopy /E /Y _scaffold\android android\
 rmdir /S /Q _scaffold
 
 # B. 拉依赖并运行
-cd pet_camera
 flutter pub get
 flutter run            # 选已连接的安卓真机/模拟器
 ```

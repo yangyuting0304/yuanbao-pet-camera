@@ -4,10 +4,12 @@ import 'dart:ui' as ui;
 import 'package:camera/camera.dart';
 import 'package:video_player/video_player.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:pet_camera/app/app_image.dart';
@@ -2432,6 +2434,17 @@ class _PortraitPageState extends ConsumerState<PortraitPage> {
   bool _generating = false;
   String? _error;
 
+  // 提示词输入框：默认回填所选风格内置提示词，可编辑 / AI 优化。
+  final _promptCtrl = TextEditingController(text: kPortraitStyles.first.prompt);
+  String? _promptError; // 提示词为空时的原处提示
+  bool _optimizing = false; // AI 优化进行中（按钮 loading）
+
+  @override
+  void dispose() {
+    _promptCtrl.dispose();
+    super.dispose();
+  }
+
   /// 相册照片使用单独的新页面展示完整列表，避免在当前页塞过多内容。
   Future<void> _openAlbumPhotosPage(
     BuildContext context,
@@ -2453,18 +2466,56 @@ class _PortraitPageState extends ConsumerState<PortraitPage> {
     }
   }
 
+  /// AI 优化：把输入框里的提示词润色扩写为完整写真提示词，回填输入框。
+  Future<void> _optimizePrompt() async {
+    final input = _promptCtrl.text.trim();
+    if (input.isEmpty) {
+      setState(() => _promptError = '先输入想拍的画面，或直接点下方风格让系统帮你补全');
+      return;
+    }
+    setState(() {
+      _optimizing = true;
+      _promptError = null;
+    });
+    try {
+      final optimized = await ref
+          .read(aiPortraitServiceProvider)
+          .optimizePrompt(input);
+      if (!mounted) return;
+      setState(() {
+        _promptCtrl.text = optimized;
+        _optimizing = false;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('AI 已润色提示词，可直接开始生成')));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _optimizing = false;
+        _promptError = e is AiPortraitException ? e.message : '优化失败：$e';
+      });
+    }
+  }
+
   Future<void> _generate() async {
     if (_selected == null || _generating) return;
+    final prompt = _promptCtrl.text.trim();
+    if (prompt.isEmpty) {
+      setState(() => _promptError = '提示词不能为空，先选一个风格或自己写一句');
+      return;
+    }
     setState(() {
       _generating = true;
       _error = null;
+      _promptError = null;
     });
     try {
       final bytes = await _selected!.resolveBytes();
       final result = await ref
           .read(aiPortraitServiceProvider)
           .generatePortrait(
-            PortraitRequest(sourceBytes: bytes, styleId: _styleId),
+            PortraitRequest(sourceBytes: bytes, styleId: _styleId, prompt: prompt),
           );
       if (!mounted) return;
       setState(() => _generating = false);
@@ -2502,6 +2553,130 @@ class _PortraitPageState extends ConsumerState<PortraitPage> {
         });
       }
     }
+  }
+
+  /// 「AI 优化」胶囊按钮（黑色 + sparkles，加载中转圈）。
+  Widget _buildOptimizeButton(AppTokens t) {
+    return GestureDetector(
+      onTap: _optimizing ? null : _optimizePrompt,
+      child: Container(
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: _optimizing ? const Color(0xFFF6F8FA) : Colors.black,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_optimizing)
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.black,
+                ),
+              )
+            else
+              const MingCuteIcon(
+                MingCuteIcons.sparkles,
+                size: AppUi.iconSmall,
+                color: Colors.white,
+              ),
+            const SizedBox(width: 6),
+            Text(
+              _optimizing ? '优化中…' : 'AI 优化',
+              style: TextStyle(
+                fontSize: AppUi.fontCaption,
+                height: 20 / AppUi.fontCaption,
+                fontWeight: FontWeight.w500,
+                color: _optimizing ? t.textSecondary : Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 提示词编辑区：回填所选风格的内置提示词，支持 AI 优化润色。
+  Widget _buildPromptSection(AppTokens t) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              '提示词',
+              style: TextStyle(
+                fontSize: AppUi.fontHeadline,
+                height: 28 / AppUi.fontHeadline,
+                fontWeight: FontWeight.w400,
+                color: t.textPrimary,
+              ),
+            ),
+            _buildOptimizeButton(t),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '已自动带所选风格的描述，可自由修改；也可以点「AI 优化」帮你润色扩写',
+          style: TextStyle(fontSize: AppUi.fontCaption, color: t.textSecondary),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _promptCtrl,
+          minLines: 3,
+          maxLines: 6,
+          onChanged: (_) {
+            if (_promptError != null) setState(() => _promptError = null);
+          },
+          style: TextStyle(
+            fontSize: AppUi.fontCaption,
+            height: AppUi.lineHeight(AppUi.fontCaption),
+            color: t.textPrimary,
+          ),
+          decoration: InputDecoration(
+            hintText: '想拍的画面或造型，如：戴上珍珠项链、穿汉服回眸、在樱花树下…',
+            hintStyle: TextStyle(
+              fontSize: AppUi.fontCaption,
+              height: AppUi.lineHeight(AppUi.fontCaption),
+              color: t.textSecondary,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppUi.radiusCard),
+              borderSide: BorderSide(
+                color: _promptError != null ? t.error : const Color(0xFFE2E4E6),
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppUi.radiusCard),
+              borderSide: BorderSide(
+                color: _promptError != null ? t.error : const Color(0xFFE2E4E6),
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppUi.radiusCard),
+              borderSide: const BorderSide(color: Color(0xFF000000)),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 12,
+            ),
+          ),
+        ),
+        if (_promptError != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            _promptError!,
+            style: TextStyle(fontSize: AppUi.fontCaption, color: t.error),
+          ),
+        ],
+      ],
+    );
   }
 
   @override
@@ -2603,7 +2778,12 @@ class _PortraitPageState extends ConsumerState<PortraitPage> {
             final active = style.id == _styleId;
             return GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: () => setState(() => _styleId = style.id),
+              onTap: () => setState(() {
+                _styleId = style.id;
+                // 选中风格后把其内置提示词显示到输入框（可继续编辑 / AI 优化）。
+                _promptCtrl.text = style.prompt;
+                _promptError = null;
+              }),
               child: Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
@@ -2640,6 +2820,8 @@ class _PortraitPageState extends ConsumerState<PortraitPage> {
             );
           },
         ),
+        const SizedBox(height: 24),
+        _buildPromptSection(t),
         const SizedBox(height: 20),
         if (_generating)
           _ResultPlaceholder(
@@ -3468,11 +3650,15 @@ class _AlbumViewState extends State<_AlbumView> {
               );
             }
             // 作品统一以 COS 公网地址加载（刷新后仍可展示）。
-            return ClipRRect(
-              borderRadius: BorderRadius.circular(AppUi.radiusCard),
-              child: Image(
-                image: CachedNetworkImageProvider(w.url),
-                fit: BoxFit.cover,
+            // 点击放大预览（与其他相册分类一致）。
+            return GestureDetector(
+              onTap: () => _previewCreatedImage(context, w),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(AppUi.radiusCard),
+                child: Image(
+                  image: CachedNetworkImageProvider(w.url),
+                  fit: BoxFit.cover,
+                ),
               ),
             );
           }, childCount: works.length),
@@ -3485,6 +3671,22 @@ class _AlbumViewState extends State<_AlbumView> {
     showDialog<void>(
       context: context,
       builder: (_) => _CreatedVideoDialog(work: work),
+    );
+  }
+
+  /// 「我的创作」图片点击放大预览（与其他相册分类共用 [_PhotoDialog]）。
+  void _previewCreatedImage(BuildContext context, LibraryItem work) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => _PhotoDialog(
+        item: _AlbumItem(
+          source: SourcePhoto(url: work.url, caption: work.label),
+          image: CachedNetworkImageProvider(work.url),
+          caption: work.label.isEmpty ? 'AI 创作' : work.label,
+          takenAt: work.takenAt,
+          petId: work.petId,
+        ),
+      ),
     );
   }
 
@@ -5876,7 +6078,11 @@ class _CreatedVideoDialog extends StatefulWidget {
 
 class _CreatedVideoDialogState extends State<_CreatedVideoDialog> {
   VideoPlayerController? _c;
+
+  /// 原生端把远程视频整包下载后的本地临时文件路径（dispose 时释放）。
+  String? _localUrl;
   bool _ready = false;
+  String? _error;
 
   @override
   void initState() {
@@ -5885,19 +6091,120 @@ class _CreatedVideoDialogState extends State<_CreatedVideoDialog> {
   }
 
   Future<void> _init() async {
-    // 视频已上传 COS，直接用远程地址播放（COS 已配置跨域规则）。
-    final c = MediaPlatform.videoController(widget.work.url);
-    _c = c;
-    await c.initialize();
-    if (mounted) setState(() => _ready = true);
-    await c.play();
+    final url = widget.work.url;
+    try {
+      VideoPlayerController c;
+      if (kIsWeb) {
+        // Web：直接播放远程地址（<video> 无需 CORS）。
+        c = VideoPlayerController.networkUrl(Uri.parse(url));
+      } else if (url.startsWith('http://') || url.startsWith('https://')) {
+        // 原生端：video_player 的 file 源只接受本地路径，且万相成片 mp4 的
+        // moov 在文件尾，直接 networkUrl 拉 COS 会长时间缓冲。这里先整包
+        // 下载到临时文件再本地播放（稳定秒开）。
+        final resp = await http
+            .get(Uri.parse(url))
+            .timeout(const Duration(seconds: 60));
+        if (resp.statusCode != 200) {
+          throw Exception('视频下载失败（HTTP ${resp.statusCode}）');
+        }
+        final path = await MediaPlatform.createMediaUrl(
+          resp.bodyBytes,
+          'video/mp4',
+        );
+        _localUrl = path;
+        c = MediaPlatform.videoController(path);
+      } else {
+        c = MediaPlatform.videoController(url);
+      }
+      _c = c;
+      await c.initialize();
+      if (!mounted) {
+        c.dispose();
+        return;
+      }
+      setState(() {
+        _ready = true;
+        _error = null;
+      });
+      await c.play();
+    } catch (e) {
+      // 给出可见错误 + 重试，而不是无限转圈。
+      if (mounted) {
+        setState(() => _error = '视频打开失败：$e');
+      }
+    }
+  }
+
+  Future<void> _retry() async {
+    _c?.dispose();
+    _c = null;
+    if (_localUrl != null) {
+      await MediaPlatform.releaseMediaUrl(_localUrl!);
+      _localUrl = null;
+    }
+    if (!mounted) return;
+    setState(() {
+      _ready = false;
+      _error = null;
+    });
+    _init();
   }
 
   @override
   void dispose() {
-    // 远程 URL 无需释放（仅本地 blob 才需要 releaseMediaUrl）。
     _c?.dispose();
+    if (_localUrl != null) {
+      MediaPlatform.releaseMediaUrl(_localUrl!);
+    }
     super.dispose();
+  }
+
+  Widget _buildPreview() {
+    final err = _error;
+    if (err != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                err,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: AppUi.fontCaption,
+                  color: Colors.white70,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: _retry,
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  backgroundColor: Colors.white24,
+                ),
+                child: const Text('重试'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return _ready && _c != null && _c!.value.isInitialized
+        ? Center(child: VideoPlayer(_c!))
+        : Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                CircularProgressIndicator(color: Colors.white70),
+                SizedBox(height: 12),
+                Text(
+                  '加载中…',
+                  style: TextStyle(fontSize: 12, color: Colors.white70),
+                ),
+              ],
+            ),
+          );
   }
 
   @override
@@ -5923,9 +6230,7 @@ class _CreatedVideoDialogState extends State<_CreatedVideoDialog> {
                     borderRadius: BorderRadius.circular(AppUi.radiusCard),
                   ),
                   clipBehavior: Clip.antiAlias,
-                  child: _ready && _c != null && _c!.value.isInitialized
-                      ? Center(child: VideoPlayer(_c!))
-                      : const Center(child: CircularProgressIndicator()),
+                  child: _buildPreview(),
                 ),
               ),
               const SizedBox(height: 12),

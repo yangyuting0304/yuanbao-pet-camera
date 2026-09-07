@@ -2,6 +2,7 @@
 
 > 整理日期：2026-08-31
 > 更新日期：2026-09-01（确认云上种子图已存在、路径已锁定，归档至 DEPLOY.md）
+> 更新：2026-09-04（前端静态站改由 ECS + nginx 托管，删除 `deploy/cos_upload.py`，COS 只保留媒体资源）
 > 本文档汇总当前项目的未完成任务、待决决策与已知问题，按优先级（P0=阻塞上线 / P1=重要 / P2=优化）排列。
 
 ---
@@ -10,7 +11,8 @@
 
 | 改造项 | 状态 | 结果 |
 |---|---|---|
-| 中文字体子集化 | ✅ 已完成 | `NotoSansSC.ttf` 16.95 MB → 3.57 MB（-79%），原字体备份于 `build/font-backup/` |
+| 中文字体子集化 | ✅ 已完成 | `NotoSansSC.ttf` 16.95 MB → 2×1.16 MB（-86%），母版存于 `tools/font-subset/source/` |
+| 中文字体阻塞首帧 | ✅ 已修复 | 2026-09-07：不再声明 `flutter.fonts`，改为 `FontLoader` 运行时注册 + 800ms 限时等待（首屏曾因此卡 28 秒） |
 | 种子图外置 COS | ✅ 已完成 | Web 部署包 102.8 MB → ~60 MB；照片不再进安装包 |
 | 种子图上传 | ✅ 已上传 | `upload.js` 上传 212 张到 `seed/photos/`，成功 212 / 失败 0（见 P0-1） |
 | 上传工具 | ✅ 已完成 | `tools/seed-upload/upload.js`（增量上传 + MD5 校验） |
@@ -18,7 +20,7 @@
 | SEED_BASE_URL 默认值 | ✅ 已锁定 | `...cos.ap-guangzhou.myqcloud.com/seed`，实测 200（见 P0-2） |
 | 短片页跨平台（dart:html） | ✅ 已修复 | 条件导入 `MediaPlatform` 抽象，analyze 零 error，见 P1-1 |
 | AI 写真图生图链路 | ✅ 已升级 | 服务端 + 前端统一 wan2.7-image-pro multimodal，见 P1-2 |
-| COS 静态站上传脚本 | ✅ 已改增量 | `deploy/cos_upload.py` 支持 ETag 跳过 / dry-run / prune，见 P2-2 |
+| 前端部署方式 | ✅ 已切换 | 2026-09-04：静态站改由 ECS + nginx 托管，`deploy/cos_upload.py` 已删除；COS 只留 `seed/`、`temp/`、`firered/` |
 
 ---
 
@@ -109,18 +111,12 @@
 - 方向：本地生成 400px 缩略图，或开通腾讯云数据万象（CI）用 `?imageMogr2/thumbnail/400x` 实时生成。
 - **状态（2026-08-31）**：跳过 —— 需你决策方案（本地生成需加图片处理依赖；数据万象需控制台开通），待讨论后实施。
 
-### P2-2 上传脚本改增量/孤儿清理 【✅ 已改 2026-08-31】
+### P2-2 上传脚本改增量/孤儿清理 【✅ 已改 2026-08-31；🗑 已废弃 2026-09-04】
 
-- `deploy/cos_upload.py` 已改造：
-  - 增量上传：`head_object` 拿 ETag（单对象 PUT = MD5）比对，一致即跳过
-  - `--dry-run` 预览待上传/待删除
-  - `--prune` 清理远端孤儿（自动保护 `seed/`、`temp/`、`firered/` 前缀）
-- 用法：
-  ```powershell
-  python deploy/cos_upload.py --dry-run   # 预览
-  python deploy/cos_upload.py             # 增量上传
-  python deploy/cos_upload.py --prune     # 增量 + 清理孤儿
-  ```
+- 原 `deploy/cos_upload.py`（增量上传 `build/web` 到 COS 静态站）已删除 —— 前端改为部署到 ECS（nginx 托管）。
+  COS 现在只存媒体：`seed/`（种子图）、`temp/`、`firered/`（代理临时图 / 拍摄的照片与视频、相册清单）。
+- 替补打包脚本 `sync_build.py`：`build/web` → `build/yuanbao-pet-camera/`（目录名 = URL 子路径名）+ `build/web-deploy.zip`；上传方式见 `ECS_DEPLOY.md`。
+- 种子图仍走 `tools/seed-upload/upload.js`（增量 + MD5 校验），不变。
 
 ### P2-3 双图标库合并
 
@@ -133,12 +129,20 @@
 
 ### 字体子集化重跑（新增 UI 文案后）
 
+字体现已拆成 400/700 两个静态子集，母版保存在 `tools/font-subset/source/NotoSansSC-variable.ttf`。
+**必须从母版重新生成**，不要拿已生成的文件二次加工：
+
 ```powershell
-node tools/font-subset/subset.js                 # 自动纳入新字符
-node tools/font-subset/subset.js --preset=source # 只要源码字符（最小体积）
-# 回退原字体：
-copy build\font-backup\NotoSansSC.ttf assets\fonts\NotoSansSC.ttf
+cd tools/font-subset
+node subset.js --src=source/NotoSansSC-variable.ttf --gb=level1 --pin=400 --out=assets/fonts/NotoSansSC-400.ttf
+node subset.js --src=source/NotoSansSC-variable.ttf --gb=level1 --pin=700 --out=assets/fonts/NotoSansSC-700.ttf
+node subset.js --inspect=assets/fonts/NotoSansSC-400.ttf,assets/fonts/NotoSansSC-700.ttf  # 校验字重 400/700
 ```
+
+- `--gb=level1` 只保留 GB2312 一级字库（3755 常用字）+ 源码里出现过的所有字符；
+  改回全集用 `--gb=full`，只留源码字符用 `--preset=source`。
+- 字体不再写在 `pubspec.yaml` 的 `flutter.fonts` 里，由 `lib/data/app_font.dart`
+  运行时注册（避免阻塞 Web 首帧），新增字重文件记得同步 `kBrandFontAssets`。
 
 ### 种子图上传
 
@@ -147,18 +151,21 @@ node tools/seed-upload/upload.js --dry-run   # 预览待上传
 node tools/seed-upload/upload.js             # 正式上传（增量）
 ```
 
-### 静态站部署（增量）
+### 前端部署到 ECS
 
 ```powershell
-python deploy/cos_upload.py --dry-run   # 预览
-python deploy/cos_upload.py --prune     # 增量上传 + 清理孤儿
+build_web.cmd          # 构建（含 --no-web-resources-cdn + --base-href=/yuanbao-pet-camera/）
+python sync_build.py   # 可选：打包成 build/yuanbao-pet-camera/ 与 build/web-deploy.zip
+scp -r build/yuanbao-pet-camera root@<ECS_IP>:/www/wwwroot/yangyuting.cloud/   # 上传，无需重启 nginx
 ```
+
+> `--no-web-resources-cdn` 别漏：漏了 CanvasKit 会去 `www.gstatic.com` 下载，国内取不到会一直卡在加载页。
 
 ### 关键环境变量汇总
 
 | 变量 | 用途 | 状态 |
 |---|---|---|
-| `COS_SECRET_ID/KEY` | 种子图上传（seed-upload）+ 静态站部署 | ⏳ 待填 |
+| `COS_SECRET_ID/KEY` | 种子图上传（seed-upload）+ 代理临时图床 | ⏳ 待填 |
 | `TENCENT_COS_SECRET_ID/KEY` | AI 代理旧版路径 `/api/upload` 云持久化 | ⏳ 待填（写真新链路已不依赖） |
 | `SEED_BASE_URL` | App 种子图远程地址 | ✅ `...cos.ap-guangzhou.myqcloud.com/seed`，已上传可访问（P0-2） |
 | `DASHSCOPE_API_KEY` | 百炼写真 | ✅ 已填（ai_portrait/.env） |

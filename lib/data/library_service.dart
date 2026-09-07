@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:pet_camera/data/app_env.dart';
 
 /// 作品类型（对应后端 WORK_TYPES）。
 /// 分属 COS 上两份清单：seed.json（seed_photo）与 works.json（其余四类）。
@@ -107,21 +108,12 @@ class LibraryItem {
 
 /// 相册库服务：种子数据与作品清单都从 COS 经代理读取。
 ///
-/// 代理地址复用编译期 --dart-define（AI_VIDEO_PROXY_URL / AI_PROXY_URL / FIERED_PROXY_URL），
-/// 与 UploadService 完全一致，未配置时各接口抛出 [LibraryException]。
+/// 代理地址统一取自 [AppEnv]（编译期 --dart-define，未注入时回落生产默认值），
+/// 与 UploadService 完全一致，解析不出地址时各接口抛出 [LibraryException]。
 class LibraryService {
-  static const String _videoProxy = String.fromEnvironment(
-    'AI_VIDEO_PROXY_URL',
-    defaultValue: '',
-  );
-  static const String _aiProxy = String.fromEnvironment(
-    'AI_PROXY_URL',
-    defaultValue: '',
-  );
-  static const String _fireredProxy = String.fromEnvironment(
-    'FIERED_PROXY_URL',
-    defaultValue: '',
-  );
+  static const String _videoProxy = AppEnv.aiVideoProxyUrl;
+  static const String _aiProxy = AppEnv.aiProxyUrl;
+  static const String _fireredProxy = AppEnv.fireredProxyUrl;
 
   /// 解析代理根地址（三个代理路径不同，统一取 scheme://authority）。
   static Uri? _uriFor(String path) {

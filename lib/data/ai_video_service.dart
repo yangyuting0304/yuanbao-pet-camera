@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:pet_camera/data/app_env.dart';
 
 /// AI 一键成片：内置「宠物场景」选项卡（点选填充提示词）。
 /// 每个场景一段中文 prompt，面向万相图生视频，描述动作与氛围。
@@ -76,16 +78,38 @@ class AiVideoRequest {
   final bool watermark;
 }
 
+/// 单次状态查询结果（GET /api/ai-video/status）。
+class AiVideoStatus {
+  const AiVideoStatus({
+    required this.status,
+    this.videoUrl,
+    this.error,
+  });
+  final AiVideoTaskStatus status;
+  final String? videoUrl;
+  final String? error;
+}
+
 /// 成片生成结果。
 class AiVideoResult {
   const AiVideoResult({
     required this.videoBytes,
     required this.taskId,
     this.demo = false,
+    this.sourceUrl,
+    this.streamUrl,
   });
   final Uint8List videoBytes;
   final String taskId;
   final bool demo; // 演示模式（未配置代理/接入真实模型时为真）
+
+  /// 服务端返回的远程视频直链（万相 OSS 地址，非 demo 模式时有值）。
+  /// 仅作兜底/保存用；播放优先用 [streamUrl]。
+  final String? sourceUrl;
+
+  /// Web 端播放地址：本服务后端代理（faststart + Range），手机上秒开、
+  /// 不受 OSS 防盗链/CORS/慢下载影响。原生端为 null（直接走本地字节）。
+  final String? streamUrl;
 }
 
 /// 成片服务异常（UI 层据此展示错误信息）。
@@ -105,34 +129,112 @@ class AiVideoException implements Exception {
 ///      -> { status, videoUrl?, error? }，SUCCEEDED 后取 videoUrl 下载
 ///   3. 下载 MP4 字节 -> 存入短片库
 ///
-/// 构建期注入代理地址（代理根域名，不含路径）：
-///   flutter run --dart-define=AI_VIDEO_PROXY_URL=https://<你的域名>
-/// 未配置时进入「演示模式」：加载内置本地视频模拟完整交互流。
+/// 构建期注入代理地址（代理根域名，不含路径）覆盖默认值：
+///   flutter build ios --release --dart-define=AI_VIDEO_PROXY_URL=https://<你的域名>
+/// 未配置（含 Xcode 直接 Archive 漏传 dart-define）时使用 [AppEnv] 的生产默认值；
+/// 只有在显式注入为空串时才进入「演示模式」：加载内置本地视频模拟完整交互流。
 class AiVideoService {
-  // Web / 云部署：服务端代理根地址（编译期 --dart-define 注入，禁止硬编码）。
-  static const String _proxyUrl = String.fromEnvironment(
-    'AI_VIDEO_PROXY_URL',
-    defaultValue: '',
-  );
+  // 服务端代理根地址（编译期 --dart-define 注入，未注入时回落生产默认值）。
+  static const String _proxyUrl = AppEnv.aiVideoProxyUrl;
 
   // 演示模式用的内置视频（已在 pubspec.yaml 声明为资源）。
   static const String _demoVideoAsset =
       'assets/seed/photos/feat_video_compressed.mp4';
 
+  /// 去掉结尾斜杠的代理根地址。
+  static String get _base => _proxyUrl.replaceAll(RegExp(r'/+$'), '');
+
+  /// 演示模式（未配置代理）：本地模拟，不产生 taskId、不落缓存。
+  static bool get isDemo => _proxyUrl.isEmpty;
+
   /// 生成一段 AI 视频。
+  ///
+  /// Web 端：任务成功后不整包下载，直接返回远程直链（sourceUrl）供
+  /// `<video>` 流式播放 —— 手机上不依赖 blob 解码、不受 CORS 影响。
+  /// 用户点「下载 / 保存到相册」时再经 [fetchVideoBytes] 按需取字节。
+  /// 原生端：仍需字节落盘播放，保持整包下载。
   Future<AiVideoResult> generate(AiVideoRequest req) async {
     if (_proxyUrl.isEmpty) {
-      return _generateDemo(req);
+      return generateDemo(req);
     }
-    final base = _proxyUrl.replaceAll(RegExp(r'/+$'), '');
-    final taskId = await _submit(base, req);
-    final videoUrl = await _poll(base, taskId);
-    final videoBytes = await _download(videoUrl);
-    return AiVideoResult(videoBytes: videoBytes, taskId: taskId);
+    final taskId = await submit(req);
+    final videoUrl = await _poll(_base, taskId);
+    final Uint8List videoBytes;
+    if (kIsWeb) {
+      videoBytes = Uint8List(0);
+    } else {
+      videoBytes = await _download(_base, taskId);
+    }
+    return buildResult(
+      taskId: taskId,
+      videoUrl: videoUrl,
+      videoBytes: videoBytes,
+    );
+  }
+
+  /// 步骤 1：只提交任务，返回 taskId（不轮询）。
+  /// 轮询交给 [TaskCenter]，这样退出页面也不会丢结果。
+  Future<String> submit(AiVideoRequest req) async {
+    if (_proxyUrl.isEmpty) {
+      throw const AiVideoException('演示模式不支持真实生成');
+    }
+    return _submit(_base, req);
+  }
+
+  /// 查询一次任务状态（只读接口，不计费）。
+  Future<AiVideoStatus> fetchStatus(String taskId) async {
+    if (_proxyUrl.isEmpty) {
+      throw const AiVideoException('未配置服务端代理');
+    }
+    return _fetchStatus(_base, taskId);
+  }
+
+  /// 按 taskId 构造可播放结果：Web 走后端代理流，原生用字节。
+  AiVideoResult buildResult({
+    required String taskId,
+    required String videoUrl,
+    Uint8List? videoBytes,
+  }) {
+    if (kIsWeb) {
+      // 播放地址用后端代理（faststart + Range），不要直连 OSS ——
+      // 万相 mp4 的 moov 在文件尾，手机直连会因需整包下载而一直转圈。
+      return AiVideoResult(
+        videoBytes: Uint8List(0),
+        taskId: taskId,
+        sourceUrl: videoUrl,
+        streamUrl:
+            '$_base/api/ai-video/video?taskId=${Uri.encodeQueryComponent(taskId)}',
+      );
+    }
+    return AiVideoResult(
+      videoBytes: videoBytes ?? Uint8List(0),
+      taskId: taskId,
+      sourceUrl: videoUrl,
+    );
+  }
+
+  /// 调试回放：用已成功的 taskId 直接取结果（不新建任务、零费用）。
+  /// 首次立即查状态，之后每 20s 轮询直至 SUCCEEDED/FAILED。
+  Future<AiVideoResult> replayTask(String taskId) async {
+    if (_proxyUrl.isEmpty) {
+      throw const AiVideoException('未配置服务端代理');
+    }
+    final videoUrl = await _poll(_base, taskId, immediate: true);
+    final Uint8List videoBytes;
+    if (kIsWeb) {
+      videoBytes = Uint8List(0);
+    } else {
+      videoBytes = await _download(_base, taskId);
+    }
+    return buildResult(
+      taskId: taskId,
+      videoUrl: videoUrl,
+      videoBytes: videoBytes,
+    );
   }
 
   /// 演示模式：未配置代理，模拟耗时后返回内置本地视频，走通完整交互流。
-  Future<AiVideoResult> _generateDemo(AiVideoRequest req) async {
+  Future<AiVideoResult> generateDemo(AiVideoRequest req) async {
     await Future<void>.delayed(const Duration(seconds: 2));
     final data = await rootBundle.load(_demoVideoAsset);
     return AiVideoResult(
@@ -207,43 +309,88 @@ class AiVideoService {
     return data['taskId'] as String;
   }
 
-  /// 步骤 2：轮询任务状态（15s 间隔），成功后返回视频 URL。
-  Future<String> _poll(String base, String taskId) async {
-    final uri = Uri.parse('$base/api/ai-video/status?taskId=$taskId');
-    // 万相任务通常 1-5 分钟；上限 6 分钟（24 次轮询）。
+  /// 单次状态查询：GET /api/ai-video/status?taskId=xxx。
+  Future<AiVideoStatus> _fetchStatus(String base, String taskId) async {
+    final uri = Uri.parse(
+      '$base/api/ai-video/status?taskId=${Uri.encodeQueryComponent(taskId)}',
+    );
+    final resp = await http.get(uri).timeout(const Duration(seconds: 20));
+    if (resp.statusCode != 200) {
+      throw AiVideoException('查询状态失败：${resp.statusCode} ${resp.body}');
+    }
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    if (data['error'] != null) {
+      throw AiVideoException('查询状态失败：${data['error']}');
+    }
+    final status = switch (data['status'] as String? ?? 'UNKNOWN') {
+      'SUCCEEDED' => AiVideoTaskStatus.succeeded,
+      'FAILED' => AiVideoTaskStatus.failed,
+      'CANCELED' => AiVideoTaskStatus.canceled,
+      'UNKNOWN' => AiVideoTaskStatus.unknown,
+      'PENDING' => AiVideoTaskStatus.pending,
+      _ => AiVideoTaskStatus.running,
+    };
+    return AiVideoStatus(
+      status: status,
+      videoUrl: data['videoUrl'] as String?,
+      error: data['error'] as String?,
+    );
+  }
+
+  /// 步骤 2：轮询任务状态（20s 间隔），成功后返回视频 URL。
+  /// [immediate] 为 true 时首查不等 20s（调试回放 / 冷启动恢复用）。
+  Future<String> _poll(
+    String base,
+    String taskId, {
+    bool immediate = false,
+  }) async {
+    // 万相任务通常 1-5 分钟；上限约 8 分钟（24 次轮询）。
     const maxAttempts = 24;
     for (var i = 0; i < maxAttempts; i++) {
-      await Future<void>.delayed(const Duration(seconds: 15));
-      final resp = await http.get(uri).timeout(const Duration(seconds: 20));
-      if (resp.statusCode != 200) continue;
-      final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      final status = data['status'] as String? ?? 'UNKNOWN';
-      switch (status) {
-        case 'SUCCEEDED':
-          final url = data['videoUrl'] as String?;
+      if (!immediate || i > 0) {
+        await Future<void>.delayed(const Duration(seconds: 20));
+      }
+      final s = await _fetchStatus(base, taskId);
+      switch (s.status) {
+        case AiVideoTaskStatus.succeeded:
+          final url = s.videoUrl;
           if (url == null) {
             throw const AiVideoException('任务成功但缺少视频地址');
           }
           return url;
-        case 'FAILED':
-          throw AiVideoException('生成失败：${data['error'] ?? '未知原因'}');
-        case 'CANCELED':
+        case AiVideoTaskStatus.failed:
+          throw AiVideoException('生成失败：${s.error ?? '未知原因'}');
+        case AiVideoTaskStatus.canceled:
           throw const AiVideoException('任务已取消，请重新生成');
-        case 'UNKNOWN':
+        case AiVideoTaskStatus.unknown:
           throw const AiVideoException('任务不存在或已过期，请重新生成');
+        case AiVideoTaskStatus.pending:
+        case AiVideoTaskStatus.running:
+          break; // 继续轮询。
       }
-      // PENDING / RUNNING：继续轮询。
     }
-    throw const AiVideoException('生成超时（约 6 分钟），请稍后重试');
+    throw const AiVideoException('生成超时（约 8 分钟），请稍后重试');
   }
 
-  /// 步骤 3：下载视频字节。
-  Future<Uint8List> _download(String videoUrl) async {
-    final resp = await http
-        .get(Uri.parse(videoUrl))
-        .timeout(const Duration(seconds: 120));
+  /// 按需获取视频字节（下载 / 保存到相册时调用）。
+  /// 走后端代理（GET /api/ai-video/video?taskId=xxx），避免 Web 端直接 fetch
+  /// 万相 OSS 签名 URL（浏览器 CORS 拦截，会 Failed to fetch）。
+  Future<Uint8List> fetchVideoBytes(String taskId) async {
+    if (_proxyUrl.isEmpty) {
+      throw const AiVideoException('未配置服务端代理');
+    }
+    final base = _proxyUrl.replaceAll(RegExp(r'/+$'), '');
+    return _download(base, taskId);
+  }
+
+  /// 步骤 3：从代理下载视频字节（内部实现）。
+  Future<Uint8List> _download(String base, String taskId) async {
+    final uri = Uri.parse(
+      '$base/api/ai-video/video?taskId=${Uri.encodeQueryComponent(taskId)}',
+    );
+    final resp = await http.get(uri).timeout(const Duration(seconds: 120));
     if (resp.statusCode != 200) {
-      throw const AiVideoException('下载视频失败');
+      throw AiVideoException('下载视频失败：${resp.statusCode} ${resp.body}');
     }
     return resp.bodyBytes;
   }

@@ -20,3 +20,7 @@ Source audioSource(String url) =>
 Future<void> downloadBytes(Uint8List bytes, String filename) async {
   throw UnsupportedError('当前平台不支持下载');
 }
+
+Future<void> setVideosMuted(bool muted) async {
+  // 兜底平台：无可操作的 video 元素。
+}

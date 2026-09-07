@@ -2,7 +2,8 @@
 //
 // 职责：
 //   1) 服务端持有 DASHSCOPE_API_KEY，浏览器只调本服务，避免 key 泄露 + 绕过 CORS。
-//   2) 写真：POST /api/beautify { styleId, imageBase64 } -> { imageBase64 }。
+//   2) 写真：POST /api/beautify { styleId, imageBase64, prompt? } -> { imageBase64 }
+//      （prompt 缺省时按 styleId 取服务端内置提示词；前端可传自定义/优化后的提示词）。
 //   3) AI 一键成片（图生视频，异步任务）：
 //      - POST /api/ai-video { imageBase64, prompt, negativePrompt, duration, watermark,
 //                             promptExtend?, shotType?, audio?, seed?, template?, audioUrl? }
@@ -49,7 +50,7 @@ const COS = require('cos-nodejs-sdk-v5');
 const { resolveAdapter } = require('./lib/adapter');
 const { resolveVideoAdapter } = require('./lib/videoAdapter');
 const STYLE_PROMPTS = require('./prompts');
-const { PROMPT_OPTIMIZER } = STYLE_PROMPTS;
+const { PROMPT_OPTIMIZER, PROMPT_OPTIMIZER_IMAGE } = STYLE_PROMPTS;
 
 const app = express();
 app.use(cors({ origin: process.env.ALLOW_ORIGIN || '*' }));
@@ -136,8 +137,10 @@ app.post('/api/beautify', async (req, res) => {
     const styleId = body.styleId || 'oil';
     if (!imageBase64) return res.status(400).json({ error: '缺少 imageBase64' });
 
-    // 根据 styleId 取提示词（提示词由服务端持有，前端无需感知）。
-    const prompt = STYLE_PROMPTS[styleId] || STYLE_PROMPTS.oil;
+    // 提示词：前端可传自定义 prompt（用户改过/优化过）；未传则按 styleId 取
+    // 服务端内置默认（与 lib/data/ai_portrait_service.dart 的 kPortraitStyles 一致）。
+    const prompt =
+      String(body.prompt || '').trim() || STYLE_PROMPTS[styleId] || STYLE_PROMPTS.oil;
     const sourceBytes = Buffer.from(imageBase64, 'base64');
 
     // 调用当前模型适配器，统一拿到结果图字节。
@@ -182,13 +185,14 @@ const MOCK_VIDEO = ['1', 'true', 'yes'].includes(String(process.env.MOCK_VIDEO |
 // 可用 PROMPT_MODEL 环境变量切换（如 qwen-max / qwen-plus / qwen-turbo）。
 const PROMPT_MODEL = process.env.PROMPT_MODEL || 'qwen-plus-2025-07-28';
 
-// 用元提示词（prompts.js 的 PROMPT_OPTIMIZER）把用户简短描述扩写为图生视频提示词。
-async function optimizePrompt(userPrompt) {
+// 用指定元提示词（prompts.js 的 PROMPT_OPTIMIZER / PROMPT_OPTIMIZER_IMAGE）把
+// 用户输入扩写为完整生成提示词。{{用户输入}} 为占位符。
+async function optimizeWithMeta(metaPrompt, userPrompt) {
   const key = process.env.DASHSCOPE_API_KEY;
   if (!key) throw new Error('DASHSCOPE_API_KEY 未配置');
   const base = (process.env.MAAS_BASE_URL || 'https://dashscope.aliyuncs.com/api/v1').replace(/\/+$/, '');
   const url = `${base}/services/aigc/text-generation/generation`;
-  const system = PROMPT_OPTIMIZER.replace('{{用户输入}}', userPrompt);
+  const system = metaPrompt.replace('{{用户输入}}', userPrompt);
   const resp = await fetch(url, {
     method: 'POST',
     headers: {
@@ -217,6 +221,16 @@ async function optimizePrompt(userPrompt) {
   return String(text).trim();
 }
 
+// 一键成片优化（图生视频元提示词）。
+async function optimizePrompt(userPrompt) {
+  return optimizeWithMeta(PROMPT_OPTIMIZER, userPrompt);
+}
+
+// 写真优化（图生图元提示词）。
+async function optimizePortraitPrompt(userPrompt) {
+  return optimizeWithMeta(PROMPT_OPTIMIZER_IMAGE, userPrompt);
+}
+
 // AI 优化：{ prompt: 用户简短场景描述 } -> { optimizedPrompt: 完整图生视频提示词 }
 app.post('/api/ai-video/optimize-prompt', async (req, res) => {
   try {
@@ -224,6 +238,19 @@ app.post('/api/ai-video/optimize-prompt', async (req, res) => {
     if (!userPrompt) return res.status(400).json({ error: '缺少 prompt' });
     const optimizedPrompt = await optimizePrompt(userPrompt);
     console.log(`[ai-video][optimize] ${userPrompt.slice(0, 30)} -> ${optimizedPrompt.length} chars | model=${PROMPT_MODEL}`);
+    res.json({ optimizedPrompt });
+  } catch (e) {
+    res.status(500).json({ error: String((e && e.message) || e) });
+  }
+});
+
+// 写真「AI 优化」：{ prompt: 用户描述/待润色提示词 } -> { optimizedPrompt: 宠物写真提示词 }
+app.post('/api/beautify/optimize-prompt', async (req, res) => {
+  try {
+    const userPrompt = String((req.body || {}).prompt || '').trim();
+    if (!userPrompt) return res.status(400).json({ error: '缺少 prompt' });
+    const optimizedPrompt = await optimizePortraitPrompt(userPrompt);
+    console.log(`[beautify][optimize] ${userPrompt.slice(0, 30)} -> ${optimizedPrompt.length} chars | model=${PROMPT_MODEL}`);
     res.json({ optimizedPrompt });
   } catch (e) {
     res.status(500).json({ error: String((e && e.message) || e) });

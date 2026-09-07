@@ -15,13 +15,14 @@ FLUTTER_BIN="${FLUTTER_BIN:-${WORKSPACE_DIR}/.sdk/flutter/bin/flutter}"
 
 # 构建完成后，只同步这些 Flutter Web 产物。
 # 这样可以避免整目录覆盖，更不会做删除操作。
+# 注意：index.html 已内联加载逻辑（含 canvasKitBaseUrl），不再引用 flutter_bootstrap.js，
+# 因此这里不同步该文件 —— 改加载行为请直接改 web/index.html。
 SYNC_ITEMS=(
   "assets"
   "canvaskit"
   "icons"
   "favicon.png"
   "flutter.js"
-  "flutter_bootstrap.js"
   "flutter_service_worker.js"
   "index.html"
   "main.dart.js"
@@ -80,12 +81,19 @@ for item in "${SYNC_ITEMS[@]}"; do
 done
 
 # 本地预览使用 http.server 提供静态文件时，Service Worker 很容易把旧资源缓存住，
-# 导致页面一直停在 loading。这里在同步完成后改写预览包的 bootstrap，
-# 先注销旧的 Service Worker，再走普通加载流程。
-PREVIEW_BOOTSTRAP_FILE="${PREVIEW_DIR}/flutter_bootstrap.js"
-if [[ -f "${PREVIEW_BOOTSTRAP_FILE}" ]]; then
-  perl -0pi -e 's/_flutter\.loader\.load\(\{\s*serviceWorkerSettings:\s*\{\s*serviceWorkerVersion:\s*"[^"]+"[^}]*\}\s*\}\);/if ("serviceWorker" in navigator) {\n  navigator.serviceWorker.getRegistrations().then((registrations) => {\n    Promise.all(registrations.map((registration) => registration.unregister())).finally(() => {\n      _flutter.loader.load();\n    });\n  });\n} else {\n  _flutter.loader.load();\n}/s' "${PREVIEW_BOOTSTRAP_FILE}"
-  log "已关闭预览环境 Service Worker"
+# 导致页面一直停在 loading。这里在同步完成后改写预览包的 index.html，
+# 先注销旧的 Service Worker，再走普通加载流程（不再传 serviceWorkerSettings）。
+# index.html 里 _flutter.loader.load({...}) 是唯一一处调用，非贪婪匹配到它的结尾 });
+PREVIEW_INDEX_FILE="${PREVIEW_DIR}/index.html"
+if [[ -f "${PREVIEW_INDEX_FILE}" ]]; then
+  perl -0pi -e 's/_flutter\.loader\.load\(\{.*?\}\);/if ("serviceWorker" in navigator) {\n  navigator.serviceWorker.getRegistrations().then((registrations) => {\n    Promise.all(registrations.map((registration) => registration.unregister())).finally(() => {\n      _flutter.loader.load({ config: { canvasKitBaseUrl: "canvaskit" } });\n    });\n  });\n} else {\n  _flutter.loader.load({ config: { canvasKitBaseUrl: "canvaskit" } });\n}/s' "${PREVIEW_INDEX_FILE}"
+
+  # 自检：确认替换真的生效（正则依赖 index.html 里 load 调用的写法，构建器改版会失配）。
+  if grep -q 'registration.unregister' "${PREVIEW_INDEX_FILE}"; then
+    log "已关闭预览环境 Service Worker"
+  else
+    log "警告：未能改写 index.html 的加载逻辑，Service Worker 仍会注册（预览可能读旧缓存）"
+  fi
 fi
 
 log "预览同步完成"

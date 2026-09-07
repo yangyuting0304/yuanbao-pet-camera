@@ -52,3 +52,7 @@ Future<void> downloadBytes(Uint8List bytes, String filename) async {
   final file = File('${dir.path}/$filename');
   await file.writeAsBytes(bytes, flush: true);
 }
+
+/// 原生端：video_player 由系统播放器承载，无 DOM 可操作。
+/// 有声自动播放在原生端不受浏览器策略限制，此函数为空实现。
+Future<void> setVideosMuted(bool muted) async {}

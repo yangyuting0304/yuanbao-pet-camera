@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:pet_camera/data/app_env.dart';
 
 /// FireRed 图像编辑结果（毛孩 AI 创意编辑 / 换装 / 风格化）。
 class FireRedResult {
@@ -27,13 +28,11 @@ class FireRedException implements Exception {
 ///
 /// 构建期注入代理地址：
 ///   flutter run --dart-define=FIERED_PROXY_URL=https://<你的域名>/api/v1/firered-edit
-/// 未配置时进入「演示模式」回显源图，便于在 Web 端跑通完整交互流。
+/// 该服务尚未部署，默认留空，未配置时进入「演示模式」回显源图，
+/// 便于在 Web 端跑通完整交互流。
 class FireRedService {
-  // Web / 云部署：服务端代理地址（编译期 --dart-define 注入，禁止硬编码）。
-  static const String _proxyUrl = String.fromEnvironment(
-    'FIERED_PROXY_URL',
-    defaultValue: '',
-  );
+  // 服务端代理地址（编译期 --dart-define 注入，未注入时回落 [AppEnv] 默认值）。
+  static const String _proxyUrl = AppEnv.fireredProxyUrl;
 
   /// 提交一次图像编辑（图生图）。
   Future<FireRedResult> edit({

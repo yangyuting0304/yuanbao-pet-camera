@@ -29,3 +29,22 @@ Future<void> downloadBytes(Uint8List bytes, String filename) async {
   anchor.remove();
   html.Url.revokeObjectUrl(url);
 }
+
+/// 把页面上所有 <video> 元素设为静音/取消静音。
+///
+/// 背景：video_player 2.14 没有 muted API（setVolume(0) 不等于 muted 属性），
+/// 而移动/局域网浏览器的自动播放策略只放行 muted 自动播放。这里直接操作 DOM
+/// 绕过该限制：静音自动播画面，用户想听声音再点按钮取消静音（有手势必成功）。
+Future<void> setVideosMuted(bool muted) async {
+  final videos = html.document.getElementsByTagName('video');
+  for (final node in videos) {
+    if (node is html.VideoElement) {
+      node.muted = muted;
+      if (!muted) {
+        try {
+          await node.play();
+        } catch (_) {}
+      }
+    }
+  }
+}

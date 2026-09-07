@@ -1,7 +1,7 @@
 # 元宝拍拍 · 网页端上线部署文档
 
 目标：把 Flutter Web 版「元宝拍拍」部署上线，iPhone（Safari）打开 HTTPS 链接即可用相机拍照、看相册、跑 AI 美颜。
-架构：**腾讯云 COS 托管静态站 + 阿里云 ECS 跑 AI 美颜代理（千问免费图生图）**，两套云资源都用上，不额外花钱。
+架构：**阿里云 ECS 用 nginx 托管前端静态站 + 同机跑 AI 代理（通义万相 / 百炼图生图）**；腾讯云 COS 只存媒体资源（种子图、拍摄的照片与视频、相册清单），**不再托管前端**。
 
 ---
 
@@ -15,16 +15,18 @@ $env:FLUTTER_STORAGE_BASE_URL="https://storage.flutter-io.cn"
 
 # 若改过 assets/pubspec 必须 clean
 flutter clean
-flutter build web --release
+flutter build web --release --no-web-resources-cdn --base-href=/yuanbao-pet-camera/
 
 # 如需启用 AI 美颜，构建时追加（URL 见第四节）：
-flutter build web --release --dart-define=AI_PROXY_URL=https://你的代理域名/api/beautify
+flutter build web --release --no-web-resources-cdn --base-href=/yuanbao-pet-camera/ --dart-define=AI_PROXY_URL=https://你的代理域名/api/beautify
 ```
-产物在 `build/web/`（约 60MB；种子图已外置、字体已子集化，详见下节）。
+> `--no-web-resources-cdn` 必须保留：否则 CanvasKit 会去 `www.gstatic.com` 下载，国内取不到就会一直卡在「元宝拍拍加载中…」。
+
+产物在 `build/web/`（约 46MB，含本地 `canvaskit/` 约 37MB；种子图已外置、字体已子集化，详见下节）。
 
 ---
 
-## 0.5 种子图外置 + 字体子集化（2026-09-01 已落地）
+## 0.5 种子图外置 + 字体子集化与延迟加载（2026-09-01 落地，2026-09-07 升级）
 
 ### 背景
 - 种子图 `assets/seed/photos/` 原 214 个文件 / 57.2MB，全量打进安装包/部署包导致虚胖。
@@ -34,8 +36,21 @@ flutter build web --release --dart-define=AI_PROXY_URL=https://你的代理域�
 | 项 | 前 | 后 |
 |----|----|----|
 | 中文字体 `NotoSansSC.ttf` | 16.95 MB | 3.57 MB（子集化，`tools/font-subset/`） |
+| 中文字体（首屏阻塞） | 3.57 MB 首帧前必下 | 0（改为运行时加载）；字体本体再降到 2×1.16 MB |
 | Web 部署包 `build/web` | 102.8 MB | ~60 MB（seed 图不再打包） |
 | 打包种子图 | 57.2 MB | 0.8 MB（仅保留示例视频） |
+
+### 中文字体不再阻塞首帧（2026-09-07）
+- 现象：字体声明在 `pubspec.yaml` 的 `flutter.fonts` 时，Flutter Web 会**等字体下载完才渲染首帧**，
+  3.5 MB 子集在弱网实测拖到 28 秒，一直停在「元宝拍拍加载中…」。
+- 做法：
+  1. `pubspec.yaml` 不再声明 `fonts`，字体只作普通 asset 打包；
+  2. `lib/data/app_font.dart` 用 `FontLoader` 在启动时注册，最长只等 800 ms
+     （`kBrandFontWait`），超时先渲染首屏、字体后台继续下载；
+  3. 字体再压缩：GB2312 一级字库（3755 常用字）+ 源码字符，可变字重固化成
+     400/700 两个静态文件（`NotoSansSC-400/700.ttf`，各 1.16 MB）。
+- 母版：`tools/font-subset/source/NotoSansSC-variable.ttf`（3.57 MB，未 pin 的可变字体），
+  重新生成字重必须基于它，不能拿已 pin 的字体二次加工。
 
 ### 远程地址配置（`lib/data/seed_config.dart`）
 ```dart
@@ -59,14 +74,15 @@ node tools/seed-upload/upload.js --dry-run   # 预览待上传（增量）
 node tools/seed-upload/upload.js             # 正式上传
 ```
 
-### 两套脚本分工
-| 脚本 | 用途 | 同步目标 | 现在还需改吗 |
-|------|------|---------|-------------|
-| `tools/build_web_preview.sh` | **本地预览**（同步到仓库上两级的本地目录 + http.server） | 本地文件夹 | 否；`SYNC_ITEMS` 每项都是 Web 必需产物 |
-| `deploy/cos_upload.py` | **部署上线**（上传 `build/web` 到 COS `yuanbao-pet-camera/` 前缀） | 腾讯云 COS | 否；增量上传 + `--prune` 保护 `seed/` 前缀 |
+### 脚本分工
+| 脚本 | 用途 | 目标 |
+|------|------|------|
+| `tools/build_web_preview.sh` | **本地预览**（同步到仓库上两级的本地目录 + http.server） | 本地文件夹 |
+| `sync_build.py` | **打包待上传**（`build/web` → `build/yuanbao-pet-camera/` + `build/web-deploy.zip`） | 本地 `build/` |
+| `tools/seed-upload/upload.js` | **种子图增量上传**（到 COS `seed/photos/`） | 腾讯云 COS |
 
 > `build_web_preview.sh` 的 `SYNC_ITEMS` 含 `assets`（字体/图标/AssetManifest）等 Web 必需产物，**种子图已自动不打包**，无需删项。
-> `deploy/cos_upload.py` 的 `--prune` 会保护 `seed/` 前缀，不会误删种子图。
+> 前端静态资源已不再上传 COS（`deploy/cos_upload.py` 已于 2026-09-04 删除），上传 ECS 的方式见下节与 `ECS_DEPLOY.md`。
 
 ### 费用说明
 - COS 存储约 0.099 元/GB/月；**上传（外网入）流量免费**，仅下载（外网下行）收费。
@@ -78,19 +94,28 @@ node tools/seed-upload/upload.js             # 正式上传
 
 ---
 
-## 1. 静态站部署到腾讯云 COS（今天就能出 iPhone 链接）
+## 1. 静态站部署到 ECS（nginx 托管）
 
-1. 装依赖：`pip install cos-python-sdk-v5`
-2. 设置环境变量并上传：
-   ```powershell
-   $env:COS_SECRET_ID="xxx"; $env:COS_SECRET_KEY="xxx"
-   $env:COS_BUCKET="pet-camera-xxxx"; $env:COS_REGION="ap-guangzhou"
-   python deploy/cos_upload.py
-   ```
-3. 控制台开启「静态网站」：首页 = `index.html`、错误页 = `index.html`、强制 HTTPS。
-4. 得到的地址形如 `https://<bucket>.cos-website.<region>.myqcloud.com/`，**自带 HTTPS、无需备案**，iPhone 直接开。
+前端静态资源部署在阿里云 ECS，由 nginx 直接托管。完整步骤（上传 / nginx 配置 / 免费证书 / 安全组）见 **`ECS_DEPLOY.md`**。
 
-> 该域名若遇 HTTPS 异常（极少数新桶策略），可改用默认域名 `https://<bucket>.cos.<region>.myqcloud.com/index.html`，或绑定已备案自定义域名 + CDN。
+概要：
+```bash
+# 1) 构建（--base-href 与访问路径一致；--no-web-resources-cdn 避免 CanvasKit 走 Google CDN）
+flutter build web --release --no-web-resources-cdn --base-href=/yuanbao-pet-camera/
+
+# 2) 打包成与 URL 子路径同名的目录（可选，另产出 build/web-deploy.zip 供面板上传）
+python sync_build.py
+
+# 3) 上传：产物目录名 = URL 子路径名
+scp -r build/yuanbao-pet-camera root@<你的ECS公网IP>:/www/wwwroot/yangyuting.cloud/
+```
+
+要点：
+- 站点根 `/www/wwwroot/yangyuting.cloud/`（宝塔默认站点目录），应用落在 `/www/wwwroot/yangyuting.cloud/yuanbao-pet-camera/`，访问地址 `https://yangyuting.cloud/yuanbao-pet-camera/`。
+  `--base-href` 必须与实际访问路径一致，否则资源 404。
+- nginx 需配 `try_files $uri $uri/ /index.html;`，否则刷新或直接打开子页面会白屏。
+- iOS Safari 调起相机必须 HTTPS，证书申请见 `ECS_DEPLOY.md` 第 4 步。
+- 静态文件覆盖后无需重启 nginx。
 
 ---
 
@@ -109,7 +134,7 @@ node tools/seed-upload/upload.js             # 正式上传
    - 上 ECS：`systemd` 托管 + nginx/API网关 出 HTTPS
 2. 拿到代理 HTTPS 地址 `https://<域名>/api/beautify`
 3. **重新构建**并注入：`flutter build web --release --dart-define=AI_PROXY_URL=https://<域名>/api/beautify`
-4. 重新执行第 1 步上传 COS
+4. 重新执行第 1 步部署到 ECS
 
 未配置 `AI_PROXY_URL` 时，App 自动走「演示模式」回显原图，不影响相机/相册使用。
 
@@ -119,7 +144,7 @@ node tools/seed-upload/upload.js             # 正式上传
 
 | 变量 | 用途 | 在哪设 |
 |------|------|--------|
-| `COS_SECRET_ID/KEY/BUCKET/REGION` | 上传静态站 + 代理临时图床 | 本地终端 / ECS `.env` |
+| `COS_SECRET_ID/KEY/BUCKET/REGION` | 种子图上传（seed-upload）+ 代理临时图床 | 本地终端 / ECS `.env` |
 | `DASHSCOPE_API_KEY` | 千问图生图密钥 | ECS `.env`（只放服务端） |
 | `AI_PROXY_URL` | 前端调美颜代理的地址 | Flutter 构建期 `--dart-define` |
 
@@ -131,4 +156,4 @@ node tools/seed-upload/upload.js             # 正式上传
 - 首次加载仍含 CanvasKit 引擎 + 子集化字体，体积较旧版大幅下降（~60MB 部署包，首屏按需下载）。
 - AI 美颜依赖千问服务可用性 + 免费额度。
 - 安卓原生包、短片生成、P 图等能力按计划后续迭代；安卓构建目前受 `dart:html`（短片）阻塞，见 `TODO.md` P1-1。
-- 备案：COS 的 `*.myqcloud.com` 无需备案；ECS 若绑自定义域名需备案（用 API网关/FC 可免）。
+- 备案：站点在 ECS 上，绑定自定义域名需已完成备案（本项目 `yangyuting.cloud` 已备案）；IP 直连无需备案，但相机功能依赖 HTTPS，仍要配证书。

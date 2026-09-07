@@ -48,9 +48,9 @@ flutter:
     - assets/brand/logo.svg
     # 首页与主导航统一使用 MingCute SVG 图标资源
     - assets/icons/mingcute/
-  fonts:
-    # 全站统一使用子集化思源黑体 Noto Sans SC（variable 字体，一次声明即可
-    # 支持全字重，避免重复声明导致 Web 端多份请求）。
-    - family: Noto Sans SC
-      fonts:
-        - asset: assets/fonts/NotoSansSC.ttf
+    # 品牌字体：这里只当普通资源打包，不在 flutter.fonts 里声明。
+    # 声明在 fonts 下时，Flutter Web 会等字体下载完才渲染首帧（3.5 MB 曾拖到
+    # 28 秒）；改为运行时 FontLoader 注册后首屏不再被字体阻塞，
+    # 见 lib/data/app_font.dart。母版与生成脚本见 tools/font-subset。
+    - assets/fonts/NotoSansSC-400.ttf
+    - assets/fonts/NotoSansSC-700.ttf

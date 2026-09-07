@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart' show IconData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:lucide_flutter/lucide_flutter.dart';
+import 'package:pet_camera/data/app_env.dart';
 
 /// AI 写真风格（设计风格网格）。icon 为 Lucide 图标，UI 层直接渲染。
 class PortraitStyle {
@@ -68,9 +69,18 @@ const List<PortraitStyle> kPortraitStyles = <PortraitStyle>[
 
 /// AI 写真生成请求。
 class PortraitRequest {
-  const PortraitRequest({required this.sourceBytes, required this.styleId});
+  const PortraitRequest({
+    required this.sourceBytes,
+    required this.styleId,
+    this.prompt = '',
+  });
+
   final Uint8List sourceBytes;
   final String styleId;
+
+  /// 自定义提示词（可编辑 / AI 优化后回填）。
+  /// 为空时回退到所选风格的内置提示词（[PortraitStyle.prompt]）。
+  final String prompt;
 }
 
 /// AI 写真生成结果。
@@ -112,12 +122,9 @@ class AiPortraitService {
     defaultValue: '',
   );
 
-  // Web 部署走云函数代理（避免 key 进客户端 + 绕过 CORS）。
-  // 构建时：--dart-define=AI_PROXY_URL=https://<你的云函数URL>
-  static const String _proxyUrl = String.fromEnvironment(
-    'AI_PROXY_URL',
-    defaultValue: '',
-  );
+  // Web / iOS / Android 统一走云函数代理（避免 key 进客户端 + 绕过 CORS）。
+  // 覆盖默认值：--dart-define=AI_PROXY_URL=https://<你的云函数URL>/api/beautify
+  static const String _proxyUrl = AppEnv.aiProxyUrl;
 
   // 百炼 workspace 专属 base（直连路径用，与 .env 的 MAAS_BASE_URL 一致）。
   static const String _maasBase = String.fromEnvironment(
@@ -147,7 +154,8 @@ class AiPortraitService {
       (s) => s.id == req.styleId,
       orElse: () => kPortraitStyles.first,
     );
-    final taskId = await _submitTask(req, style);
+    final prompt = req.prompt.trim().isNotEmpty ? req.prompt.trim() : style.prompt;
+    final taskId = await _submitTask(req, prompt);
     final url = await _pollTask(taskId);
     final resp = await http.get(Uri.parse(url));
     if (resp.statusCode != 200) {
@@ -168,6 +176,8 @@ class AiPortraitService {
       body: jsonEncode(<String, String>{
         'styleId': req.styleId,
         'imageBase64': base64Encode(req.sourceBytes),
+        // 自定义 / AI 优化后的提示词；缺省时服务端按 styleId 用内置提示词。
+        if (req.prompt.trim().isNotEmpty) 'prompt': req.prompt.trim(),
       }),
     );
     if (resp.statusCode != 200) {
@@ -185,7 +195,8 @@ class AiPortraitService {
   }
 
   /// 提交异步图生图任务（wan2.7-image-pro + base64 内联源图），返回 task_id。
-  Future<String> _submitTask(PortraitRequest req, PortraitStyle style) async {
+  /// [prompt] 为用户自定义 / 优化后的提示词（已处理回退到风格默认）。
+  Future<String> _submitTask(PortraitRequest req, String prompt) async {
     final dataUrl = 'data:image/jpeg;base64,${base64Encode(req.sourceBytes)}';
     final resp = await http.post(
       Uri.parse(_endpoint),
@@ -201,7 +212,7 @@ class AiPortraitService {
             <String, Object>{
               'role': 'user',
               'content': <Object>[
-                <String, String>{'text': style.prompt},
+                <String, String>{'text': prompt},
                 <String, String>{'image': dataUrl},
               ],
             },
@@ -237,6 +248,55 @@ class AiPortraitService {
       }
     }
     throw const AiPortraitException('生成超时，请稍后重试');
+  }
+
+  /// 代理根地址（去掉 /api/beautify 路径），供「提示词优化」等子接口拼 URL 用。
+  static Uri? get _proxyRoot {
+    final raw = _proxyUrl;
+    if (raw.isEmpty) return null;
+    try {
+      final uri = Uri.parse(raw);
+      if (!uri.hasScheme || uri.host.isEmpty) return null;
+      return Uri.parse('${uri.scheme}://${uri.authority}');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// AI 优化提示词：发给服务端文本大模型，返回适合宠物写真的完整提示词。
+  /// 链路：POST {代理根}/api/beautify/optimize-prompt { prompt } -> { optimizedPrompt }
+  /// 未配置代理时走本地演示扩写（便于本地跑通交互）。
+  Future<String> optimizePrompt(String userPrompt) async {
+    final input = userPrompt.trim();
+    if (input.isEmpty) {
+      throw const AiPortraitException('请先输入要优化润色的提示词');
+    }
+    final root = _proxyRoot;
+    if (root == null) return _optimizePromptDemo(input);
+    final resp = await http
+        .post(
+          Uri.parse('$root/api/beautify/optimize-prompt'),
+          headers: <String, String>{'Content-Type': 'application/json'},
+          body: jsonEncode(<String, String>{'prompt': input}),
+        )
+        .timeout(const Duration(seconds: 30));
+    if (resp.statusCode != 200) {
+      throw AiPortraitException('提示词优化失败：${resp.statusCode} ${resp.body}');
+    }
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    if (data['error'] != null) {
+      throw AiPortraitException('提示词优化失败：${data['error']}');
+    }
+    final optimized = data['optimizedPrompt'] as String?;
+    if (optimized == null || optimized.trim().isEmpty) {
+      throw const AiPortraitException('提示词优化失败：返回为空');
+    }
+    return optimized.trim();
+  }
+
+  /// 演示模式：未配置代理时的本地扩写模板（真实优化需配置 AI_PROXY_URL）。
+  String _optimizePromptDemo(String input) {
+    return 'AI 宠物写真，单幅画面：保留毛孩子原有五官结构、毛色分布与自然体态，不做拟人化或形变。主题/补充描述："$input"。在此基础上强化光影质感、背景氛围与细节层次，使画面精致耐看。';
   }
 }
 
