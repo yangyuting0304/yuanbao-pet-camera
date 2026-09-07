@@ -100,7 +100,29 @@ server {
 
 > 无论哪种，最终给前端的 `AI_PROXY_URL` 必须是 `https://.../api/beautify`。
 
-## 三、AI 一键成片：提示词优化（文本大模型）
+## 三、AI 一键成片：模型切换 + 提示词优化（文本大模型）
+
+### 成片图生视频模型（默认 wan2.6-i2v-flash）
+
+前端协议不变（`POST /api/ai-video` -> `{ taskId }`，`GET /api/ai-video/status` -> `{ status, videoUrl? }`），模型差异收敛在后端：
+
+```
+lib/videoAdapter.js               视频适配器注册中心（VIDEO_MODEL -> 适配器）
+lib/models/dashscope-i2v.js       万相图生视频（基于首帧）适配器：wan2.6/2.5/2.2/wanx2.1 通用
+lib/models/dashscope-video.js     万相2.7-i2v 适配器（input.media 数组格式，需显式切换）
+index.js                          HTTP 层 + 统一协议（不关心具体模型）
+```
+
+- 默认走 `wanx2.1-i2v-plus`（首帧；仅 720P / 固定 5s，当前百炼额度可用）。设置环境变量 `VIDEO_MODEL` 即可换模型：
+  - 首帧系列：`wan2.6-i2v` / `wan2.6-i2v-flash` / `wan2.6-i2v-us` / `wan2.5-i2v-preview` / `wan2.2-i2v-flash` / `wan2.2-i2v-plus` / `wanx2.1-i2v-turbo` / `wanx2.1-i2v-plus`
+  - 旧格式保留：`wan2.7-i2v`（走 `input.media`，仅显式指定时启用）
+- `resolution` / `duration` 会按文档内置规格表自动钳制到模型合法值，避免服务端写死 720P 撞上不支持的模型；`I2V_RESOLUTION` 可覆盖分辨率档位。
+- 请求体支持的可选扩展参数（未传则不生效，兼容旧前端）：`promptExtend`、`shotType`（multi=多镜头，需模型支持且自动打开 prompt_extend）、`audio`（仅 wan2.6-i2v-flash）、`seed`、`template`（视频特效，非空时 prompt 忽略）、`audioUrl`（自定义音频，wan2.6/2.5 支持）。
+- 图片输入沿用 base64 data URL 内联（`data:image/jpeg;base64,...`），无需 COS 图床。
+
+本地验证（勿用真实图提交付费任务）：`MOCK_VIDEO=1` 走通全链路，或只测 `/healthz` 确认 `videoModel` / `videoFormat` 符合预期。
+
+### 提示词优化（文本大模型）
 
 前端「AI 优化」按钮调用本服务的 `POST /api/ai-video/optimize-prompt`：
 - 请求体：`{ prompt: "踢足球" }`（用户输入的简短场景描述）

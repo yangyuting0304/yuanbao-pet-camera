@@ -20,25 +20,53 @@
 //   - status 统一枚举：PENDING / RUNNING / SUCCEEDED / FAILED / CANCELED / UNKNOWN
 
 const { createDashScopeVideoAdapter } = require('./models/dashscope-video');
+const { createDashScopeI2VAdapter } = require('./models/dashscope-i2v');
+
+// 万相-图生视频（基于首帧）系列：wan2.6 / wan2.5 / wan2.2 / wanx2.1
+// 全部共用同一适配器（input.img_url + parameters.*），差异只在模型名与参数允许值
+// （已内置规格表按模型钳制 resolution/duration）。VIDEO_MODEL 填哪个模型名即用哪个。
+const I2V_FIRST_FRAME_MODELS = [
+  'wan2.6-i2v-flash',
+  'wan2.6-i2v',
+  'wan2.6-i2v-us',
+  'wan2.5-i2v-preview',
+  'wan2.2-i2v-flash',
+  'wan2.2-i2v-plus',
+  'wanx2.1-i2v-turbo',
+  'wanx2.1-i2v-plus',
+];
 
 // key 与 VIDEO_MODEL 环境变量对应（大小写不敏感匹配）。
 // 新增模型：import 对应工厂函数并在此注册即可。
 const VIDEO_ADAPTERS = {
-  dashscope: createDashScopeVideoAdapter,
+  // 万相2.7（input.media 数组格式，非首帧 img_url），按需显式切换。
   'wan2.7-i2v': createDashScopeVideoAdapter,
+  // 兼容别名：VIDEO_MODEL=dashscope 时同样走 wan2.7 适配器。
+  dashscope: createDashScopeVideoAdapter,
   // 示例：将来接入其他图生视频模型
   // 'minimax-video': createMiniMaxVideoAdapter,
   // 'replicate-video': createReplicateVideoAdapter,
 };
 
+// 首帧系列模型全部映射到同一个通用适配器。
+for (const name of I2V_FIRST_FRAME_MODELS) {
+  VIDEO_ADAPTERS[name] = createDashScopeI2VAdapter;
+}
+
 // 根据 VIDEO_MODEL 环境变量解析出视频适配器实例。
-// 未指定时默认 DashScope 图生视频适配器。
+// 规则：
+//   - 显式指定 VIDEO_MODEL 且能在 VIDEO_ADAPTERS 中找到 -> 用对应适配器。
+//   - 未指定 / 未知模型名 -> 回退默认首帧适配器（wanx2.1-i2v-plus，见 dashscope-i2v.js）：
+//     为避免把拼错的 VIDEO_MODEL 当作真实模型名提交，回退时剥离该变量，
+//     仅保留 I2V_MODEL（可显式覆盖默认模型）。
 function resolveVideoAdapter(env) {
   const model = (env.VIDEO_MODEL || '').trim().toLowerCase();
   if (model && VIDEO_ADAPTERS[model]) {
     return VIDEO_ADAPTERS[model](env);
   }
-  return createDashScopeVideoAdapter(env);
+  const cleanEnv = { ...env };
+  delete cleanEnv.VIDEO_MODEL;
+  return createDashScopeI2VAdapter(cleanEnv);
 }
 
-module.exports = { resolveVideoAdapter, VIDEO_ADAPTERS };
+module.exports = { resolveVideoAdapter, VIDEO_ADAPTERS, I2V_FIRST_FRAME_MODELS };

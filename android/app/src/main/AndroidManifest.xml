@@ -2,6 +2,9 @@
     <!-- 相机权限（切片2：真实拍照；安卓真机运行时授权） -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- 网络权限：AI 写真/成片代理请求（Flutter 模板默认只在 debug/profile 清单里
+         带 INTERNET，release 包需手动声明，否则 AI 功能在正式包内全部断网） -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:label="元宝拍拍"
         android:name="${applicationName}"

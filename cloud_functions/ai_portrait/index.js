@@ -4,12 +4,15 @@
 //   1) 服务端持有 DASHSCOPE_API_KEY，浏览器只调本服务，避免 key 泄露 + 绕过 CORS。
 //   2) 写真：POST /api/beautify { styleId, imageBase64 } -> { imageBase64 }。
 //   3) AI 一键成片（图生视频，异步任务）：
-//      - POST /api/ai-video { imageBase64, prompt, negativePrompt, duration, watermark }
+//      - POST /api/ai-video { imageBase64, prompt, negativePrompt, duration, watermark,
+//                             promptExtend?, shotType?, audio?, seed?, template?, audioUrl? }
 //        -> { taskId }（创建任务，不阻塞等待）
 //      - GET  /api/ai-video/status?taskId=xxx -> { status, videoUrl?, error? }
 //        （PENDING/RUNNING/SUCCEEDED/FAILED/UNKNOWN，15s 间隔轮询）
-//      默认模型 wan2.7-i2v（可经 VIDEO_MODEL 切换其他图生视频模型，见 lib/videoAdapter.js）。
-//      分辨率固定 720P（前端无控件，由服务端写死，省费用）。
+//      默认模型 wanx2.1-i2v-plus（万相-图生视频-基于首帧，仅 720P/固定 5s；
+//      可用 VIDEO_MODEL 在 lib/videoAdapter.js 注册表内切换，含 wan2.6/2.5/2.2/wanx2.1
+//      首帧系列与 wan2.7-i2v）。
+//      分辨率默认 720P（wanx2.1-i2v-plus 仅支持 720P；其他模型可用 I2V_RESOLUTION 覆盖）。
 //   4) MOCK_VIDEO=1 时进入模拟模式：不调百炼，返回假 taskId 并按真实时序
 //      （0-10s PENDING -> 10-20s RUNNING -> 20s+ SUCCEEDED + 本地 mock/demo.mp4），
 //      用于在未接真实模型时走通「提交 -> 轮询 -> 下载 -> 存库」全链路。
@@ -17,7 +20,14 @@
 // 环境变量（务必在 ECS/FC 环境变量中配置，勿写进代码）：
 //   DASHSCOPE_API_KEY        必填  百炼/千问 API Key（写真 + 成片模型）
 //   MODEL                    可选  写真模型，默认 wan2.7-image-pro（见 lib/adapter.js）
-//   VIDEO_MODEL              可选  成片模型，默认 wan2.7-i2v（见 lib/videoAdapter.js）
+//   VIDEO_MODEL              可选  成片模型，默认 wanx2.1-i2v-plus
+//                                 （见 lib/videoAdapter.js：wan2.6/2.5/2.2/wanx2.1 首帧系列
+//                                 与 wan2.7-i2v 均可选）
+//   I2V_MODEL                可选  成片模型别名（VIDEO_MODEL 未匹配注册表时也用它兜底）
+//   I2V_RESOLUTION           可选  成片分辨率档位，默认 720P（省费用；模型不支持时回退最低档）
+//   I2V_AUDIO                可选  仅 wan2.6-i2v-flash：true/false 控制有声/无声
+//   I2V_PROMPT_EXTEND        可选  true 开启 prompt 智能改写（默认 false，前端已 LLM 扩写）
+//   I2V_SEED                 可选  固定随机种子（可复现，可选）
 //   MAAS_BASE_URL            可选  百炼 workspace 专属 base，如
 //                                 https://ws-xxxx.cn-beijing.maas.aliyuncs.com/api/v1
 //                                 （配置后走 multimodal-generation + base64 内联图）
@@ -155,11 +165,13 @@ app.get('/healthz', (req, res) =>
     format: adapter.format || 'n/a',
     syncMode: adapter.syncMode || 'n/a',
     videoModel: videoAdapter.model,
+    videoFormat: videoAdapter.format || 'n/a',
     resultMode: RESULT_MODE,
   })
 );
 
-// ============ AI 一键成片（万相2.7 图生视频，异步任务） ============
+// ============ AI 一键成片（万相图生视频，异步任务） ============
+// 模型适配器默认 wan2.6-i2v-flash（首帧），可经 VIDEO_MODEL 切换（见 lib/videoAdapter.js）。
 
 const MOCK_VIDEO = ['1', 'true', 'yes'].includes(String(process.env.MOCK_VIDEO || '').toLowerCase());
 
@@ -237,8 +249,13 @@ function mockStatusFor(taskId, host) {
   return { status: 'SUCCEEDED', videoUrl: `${base}/mock/demo.mp4` };
 }
 
-// 创建成片任务。请求体：{ imageBase64, prompt?, negativePrompt?, duration?, watermark? }
-// 响应：{ taskId }。分辨率固定 720P。
+// 创建成片任务。请求体：
+//   { imageBase64, prompt?, negativePrompt?, duration?, watermark?,
+//     promptExtend?, shotType?, audio?, seed?, template?, audioUrl? }
+// 响应：{ taskId }。
+// 前 5 项兼容既有前端；后 6 项为新图生视频模型的扩展能力透传（见 lib/models/dashscope-i2v.js），
+// 对应 input.template / input.audio_url 与 parameters.prompt_extend / shot_type / audio / seed。
+// 分辨率默认 720P（省费用，模型不支持时回退该模型最低档；可用 I2V_RESOLUTION 覆盖）。
 app.post('/api/ai-video', async (req, res) => {
   try {
     const body = req.body || {};
@@ -263,9 +280,16 @@ app.post('/api/ai-video', async (req, res) => {
         negativePrompt: body.negativePrompt,
         duration: body.duration,
         watermark: body.watermark,
+        // 新模型扩展参数（未传则缺省，适配器内自动兜底）。
+        promptExtend: body.promptExtend,
+        shotType: body.shotType,
+        audio: body.audio,
+        seed: body.seed,
+        template: body.template,
+        audioUrl: body.audioUrl,
       },
     });
-    console.log(`[ai-video] create ${taskId} | model=${videoAdapter.model}`);
+    console.log(`[ai-video] create ${taskId} | model=${videoAdapter.model} | res=${videoAdapter.resolution || 'n/a'}`);
     res.json({ taskId });
   } catch (e) {
     res.status(500).json({ error: String((e && e.message) || e) });
@@ -283,6 +307,75 @@ app.get('/api/ai-video/status', async (req, res) => {
     // 真实模式：委托给视频模型适配器查询状态。
     const result = await videoAdapter.pollStatus(taskId);
     res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: String((e && e.message) || e) });
+  }
+});
+
+// 下载/播放成片视频（代理）：服务端转发万相 OSS 链接（Node 无 CORS 限制）。
+//
+// 关键设计：支持 HTTP Range 透传。万相产出的 mp4 其 moov 元数据位于文件尾部
+// （未做 faststart），手机浏览器 <video> 播放这类文件要靠 Range 先读尾部元数据，
+// 否则必须整包下载完才出画面（表现为一直转圈）。OSS 本身支持 Range，
+// 这里把请求头 Range 原样透传给 OSS，并把 206/Content-Range 转发回前端。
+//
+// 请求：GET /api/ai-video/video?taskId=xxx
+// 响应：video/mp4（200 全量或 206 分段），浏览器 <video> 可直接播放。
+app.get('/api/ai-video/video', async (req, res) => {
+  try {
+    const taskId = String(req.query.taskId || '').trim();
+    if (!taskId) return res.status(400).json({ error: '缺少 taskId' });
+
+    // 模拟模式（mock-xxx 任务）：吐本地演示视频。res.sendFile 自带 Range 支持。
+    if (MOCK_VIDEO && taskId.startsWith('mock-')) {
+      const mockFile = path.join(MOCK_MEDIA_DIR, 'demo.mp4');
+      res.set('Cache-Control', 'private, max-age=600');
+      return res.sendFile(mockFile);
+    }
+
+    // 查状态：必须 SUCCEEDED 且带 videoUrl；否则 409 让前端继续轮询。
+    const result = await videoAdapter.pollStatus(taskId);
+    if (result.status !== 'SUCCEEDED' || !result.videoUrl) {
+      return res.status(409).json({ error: '任务尚未完成', status: result.status || 'UNKNOWN' });
+    }
+
+    // 服务端 fetch 万相 OSS（无 CORS 限制）。透传 Range，设 UA 便于对方日志区分。
+    const headers = { 'User-Agent': 'ai-portrait-proxy/1.2' };
+    if (req.headers.range) headers.Range = req.headers.range;
+    const dl = await fetch(result.videoUrl, { headers });
+    if (!dl.ok && dl.status !== 206) {
+      return res.status(502).json({ error: `OSS 拉取失败 ${dl.status}` });
+    }
+    if (!dl.body) {
+      return res.status(502).json({ error: 'OSS 无响应体' });
+    }
+
+    // 原样转发状态码与媒体头，前端 <video> 获得 206/Range 语义。
+    res.status(dl.status);
+    const ct = dl.headers.get('content-type') || 'video/mp4';
+    res.set('Content-Type', ct);
+    for (const h of ['content-range', 'accept-ranges', 'content-length']) {
+      const v = dl.headers.get(h);
+      if (v) res.set(h, v);
+    }
+    res.set('Cache-Control', 'private, max-age=600');
+    res.set('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges');
+
+    // 流式转发，避免整包进内存。
+    const reader = dl.body.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!res.write(value)) {
+          await new Promise((r) => res.once('drain', r));
+        }
+      }
+      res.end();
+    } catch (e) {
+      if (!res.headersSent) res.status(500).json({ error: String((e && e.message) || e) });
+      try { res.end(); } catch (_) {}
+    }
   } catch (e) {
     res.status(500).json({ error: String((e && e.message) || e) });
   }
@@ -402,6 +495,6 @@ app.get('/api/works', async (_req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () =>
   console.log(
-    `[ai-portrait-proxy] listening on :${PORT} | model=${adapter.model} | format=${adapter.format || 'n/a'} | videoModel=${videoAdapter.model} | mockVideo=${MOCK_VIDEO}`
+    `[ai-portrait-proxy] listening on :${PORT} | model=${adapter.model} | format=${adapter.format || 'n/a'} | videoModel=${videoAdapter.model} | videoRes=${videoAdapter.resolution || 'n/a'} | mockVideo=${MOCK_VIDEO}`
   )
 );
