@@ -21,6 +21,7 @@
 
 const { createDashScopeVideoAdapter } = require('./models/dashscope-video');
 const { createDashScopeI2VAdapter } = require('./models/dashscope-i2v');
+const { createDashScopeR2VAdapter } = require('./models/dashscope-r2v');
 
 // 万相-图生视频（基于首帧）系列：wan2.6 / wan2.5 / wan2.2 / wanx2.1
 // 全部共用同一适配器（input.img_url + parameters.*），差异只在模型名与参数允许值
@@ -48,9 +49,22 @@ const VIDEO_ADAPTERS = {
   // 'replicate-video': createReplicateVideoAdapter,
 };
 
+// 万相2.6 参考生视频（R2V，旧版协议）：照片只作角色锚点，不占首帧。
+// 与首帧系列共用 video-synthesis 端点，但入参是 input.reference_urls + parameters.size，
+// 参数语义差异较大，故独立适配器，详见 lib/models/dashscope-r2v.js 头部注释。
+const R2V_REFERENCE_MODELS = [
+  'wan2.6-r2v-flash',
+  'wan2.6-r2v',
+];
+
 // 首帧系列模型全部映射到同一个通用适配器。
 for (const name of I2V_FIRST_FRAME_MODELS) {
   VIDEO_ADAPTERS[name] = createDashScopeI2VAdapter;
+}
+
+// 参考生视频系列映射到 r2v 适配器。
+for (const name of R2V_REFERENCE_MODELS) {
+  VIDEO_ADAPTERS[name] = createDashScopeR2VAdapter;
 }
 
 // 根据 VIDEO_MODEL 环境变量解析出视频适配器实例。
@@ -60,7 +74,9 @@ for (const name of I2V_FIRST_FRAME_MODELS) {
 //     为避免把拼错的 VIDEO_MODEL 当作真实模型名提交，回退时剥离该变量，
 //     仅保留 I2V_MODEL（可显式覆盖默认模型）。
 function resolveVideoAdapter(env) {
-  const model = (env.VIDEO_MODEL || '').trim().toLowerCase();
+  // R2V_MODEL 亦可触发选型（dashscope-r2v.js 也认这两个变量），
+  // 便于只配 R2V_MODEL 而不动 VIDEO_MODEL 的场景。
+  const model = (env.VIDEO_MODEL || env.R2V_MODEL || '').trim().toLowerCase();
   if (model && VIDEO_ADAPTERS[model]) {
     return VIDEO_ADAPTERS[model](env);
   }
@@ -69,4 +85,9 @@ function resolveVideoAdapter(env) {
   return createDashScopeI2VAdapter(cleanEnv);
 }
 
-module.exports = { resolveVideoAdapter, VIDEO_ADAPTERS, I2V_FIRST_FRAME_MODELS };
+module.exports = {
+  resolveVideoAdapter,
+  VIDEO_ADAPTERS,
+  I2V_FIRST_FRAME_MODELS,
+  R2V_REFERENCE_MODELS,
+};

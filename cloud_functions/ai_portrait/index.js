@@ -6,8 +6,10 @@
 //      （prompt 缺省时按 styleId 取服务端内置提示词；前端可传自定义/优化后的提示词）。
 //   3) AI 一键成片（图生视频，异步任务）：
 //      - POST /api/ai-video { imageBase64, prompt, negativePrompt, duration, watermark,
-//                             promptExtend?, shotType?, audio?, seed?, template?, audioUrl? }
+//                             model?, promptExtend?, shotType?, audio?, seed?, template?, audioUrl? }
 //        -> { taskId }（创建任务，不阻塞等待）
+//        model 可选：指定具体视频模型（如 wan2.6-r2v / wan2.6-r2v-flash），
+//        不传则用服务端默认（VIDEO_MODEL）。任务提交后按该 model 路由到对应适配器。
 //      - GET  /api/ai-video/status?taskId=xxx -> { status, videoUrl?, error? }
 //        （PENDING/RUNNING/SUCCEEDED/FAILED/UNKNOWN，15s 间隔轮询）
 //      默认模型 wanx2.1-i2v-plus（万相-图生视频-基于首帧，仅 720P/固定 5s；
@@ -21,9 +23,10 @@
 // 环境变量（务必在 ECS/FC 环境变量中配置，勿写进代码）：
 //   DASHSCOPE_API_KEY        必填  百炼/千问 API Key（写真 + 成片模型）
 //   MODEL                    可选  写真模型，默认 wan2.7-image-pro（见 lib/adapter.js）
-//   VIDEO_MODEL              可选  成片模型，默认 wanx2.1-i2v-plus
-//                                 （见 lib/videoAdapter.js：wan2.6/2.5/2.2/wanx2.1 首帧系列
-//                                 与 wan2.7-i2v 均可选）
+//   VIDEO_MODEL              可选  成片默认模型（前端 body.model 未指定时使用），
+//                                 默认 wanx2.1-i2v-plus（见 lib/videoAdapter.js 注册表）
+//   R2V_MODEL                可选  参考生视频型号别名（前端 body.model 显式传
+//                                 wan2.6-r2v / wan2.6-r2v-flash 时无需此变量）
 //   I2V_MODEL                可选  成片模型别名（VIDEO_MODEL 未匹配注册表时也用它兜底）
 //   I2V_RESOLUTION           可选  成片分辨率档位，默认 720P（省费用；模型不支持时回退最低档）
 //   I2V_AUDIO                可选  仅 wan2.6-i2v-flash：true/false 控制有声/无声
@@ -48,7 +51,7 @@ const cors = require('cors');
 const COS = require('cos-nodejs-sdk-v5');
 
 const { resolveAdapter } = require('./lib/adapter');
-const { resolveVideoAdapter } = require('./lib/videoAdapter');
+const { resolveVideoAdapter, VIDEO_ADAPTERS } = require('./lib/videoAdapter');
 const STYLE_PROMPTS = require('./prompts');
 const { PROMPT_OPTIMIZER, PROMPT_OPTIMIZER_IMAGE } = STYLE_PROMPTS;
 
@@ -119,6 +122,23 @@ function withWorksLock(fn) {
 const adapter = resolveAdapter(process.env);
 const videoAdapter = resolveVideoAdapter(process.env);
 const RESULT_MODE = (process.env.RESULT_MODE || 'base64').toLowerCase();
+
+// ============ AI 成片：按请求动态选择视频模型 ============
+// 前端 body.model 可指定具体模型（如 wan2.6-r2v / wan2.6-r2v-flash）；
+// 为空时回落启动期解析出的默认适配器（VIDEO_MODEL，保持既有行为）。
+// 每个模型名缓存一个适配器实例；未注册的模型名直接报错（不静默回落 i2v）。
+const _videoAdapterCache = new Map(); // modelName(lower) -> adapter instance
+function resolveVideoAdapterFor(modelName) {
+  const name = String(modelName || '').trim().toLowerCase();
+  if (!name) return videoAdapter;
+  if (_videoAdapterCache.has(name)) return _videoAdapterCache.get(name);
+  if (!VIDEO_ADAPTERS[name]) {
+    throw new Error(`未知视频模型「${modelName}」（可用模型见 lib/videoAdapter.js 注册表）`);
+  }
+  const inst = VIDEO_ADAPTERS[name]({ ...process.env, VIDEO_MODEL: name });
+  _videoAdapterCache.set(name, inst);
+  return inst;
+}
 
 // 下载结果图并转成统一输出。
 // 统一输出格式：{ imageBase64, imageUrl? }
@@ -260,6 +280,13 @@ app.post('/api/beautify/optimize-prompt', async (req, res) => {
 // 模拟模式：内存任务表 + 静态演示视频。
 // 时序模拟真实异步：0-10s PENDING -> 10-20s RUNNING -> 20s+ SUCCEEDED。
 const mockTasks = new Map();
+
+// taskId -> 创建任务时所用的视频适配器实例（真实模式）。
+// /status 与 /video 按它轮询，确保 r2v / i2v 各自协议正确；
+// 进程重启后（serverless 冷启动）查不到时回落默认适配器 ——
+// 百炼 i2v / r2v 任务查询同为 GET /tasks/{id}、返回字段同构，回落是安全的。
+const videoTaskAdapters = new Map();
+
 const MOCK_MEDIA_DIR = path.join(__dirname, 'mock');
 if (MOCK_VIDEO) {
   app.use('/mock', express.static(MOCK_MEDIA_DIR));
@@ -295,12 +322,20 @@ app.post('/api/ai-video', async (req, res) => {
     if (MOCK_VIDEO) {
       const taskId = `mock-${Date.now()}`;
       mockTasks.set(taskId, { createdAt: Date.now() });
-      console.log(`[ai-video][mock] create ${taskId}`);
+      console.log(`[ai-video][mock] create ${taskId}${body.model ? ` | model=${body.model}` : ''}`);
       return res.json({ taskId });
     }
 
-    // 真实模式：委托给视频模型适配器（可按 VIDEO_MODEL 切换不同模型）。
-    const taskId = await videoAdapter.submit({
+    // 按请求 model 解析适配器（可选；未传/空则走服务端默认），未知模型返回 400。
+    let taskAdapter;
+    try {
+      taskAdapter = resolveVideoAdapterFor(body.model);
+    } catch (e) {
+      return res.status(400).json({ error: String((e && e.message) || e) });
+    }
+
+    // 真实模式：委托给视频模型适配器（可按 body.model / VIDEO_MODEL 切换不同模型）。
+    const taskId = await taskAdapter.submit({
       imageBase64,
       prompt: body.prompt,
       options: {
@@ -316,7 +351,9 @@ app.post('/api/ai-video', async (req, res) => {
         audioUrl: body.audioUrl,
       },
     });
-    console.log(`[ai-video] create ${taskId} | model=${videoAdapter.model} | res=${videoAdapter.resolution || 'n/a'}`);
+    // 记录任务与模型适配器的对应关系，供后续 /status 与 /video 路由轮询。
+    videoTaskAdapters.set(taskId, taskAdapter);
+    console.log(`[ai-video] create ${taskId} | model=${taskAdapter.model} | res=${taskAdapter.resolution || 'n/a'}`);
     res.json({ taskId });
   } catch (e) {
     res.status(500).json({ error: String((e && e.message) || e) });
@@ -331,8 +368,10 @@ app.get('/api/ai-video/status', async (req, res) => {
 
     if (MOCK_VIDEO) return res.json(mockStatusFor(taskId, req.get('host')));
 
-    // 真实模式：委托给视频模型适配器查询状态。
-    const result = await videoAdapter.pollStatus(taskId);
+    // 真实模式：按创建该任务时的模型适配器查询状态
+    //（未登记时回落默认适配器：百炼查询端点与返回字段跨模型同构）。
+    const taskAdapter = videoTaskAdapters.get(taskId) || videoAdapter;
+    const result = await taskAdapter.pollStatus(taskId);
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: String((e && e.message) || e) });
@@ -361,7 +400,7 @@ app.get('/api/ai-video/video', async (req, res) => {
     }
 
     // 查状态：必须 SUCCEEDED 且带 videoUrl；否则 409 让前端继续轮询。
-    const result = await videoAdapter.pollStatus(taskId);
+    const result = await (videoTaskAdapters.get(taskId) || videoAdapter).pollStatus(taskId);
     if (result.status !== 'SUCCEEDED' || !result.videoUrl) {
       return res.status(409).json({ error: '任务尚未完成', status: result.status || 'UNKNOWN' });
     }
@@ -411,8 +450,10 @@ app.get('/api/ai-video/video', async (req, res) => {
 // ============ 通用 COS 上传（作品云存储 + 登记清单） ============
 // 前端保存生成结果/拍摄照片时，先把字节传到这里：
 //   1) 上传到 COS works/ 目录，拿到公网 URL
-//   2) 把 {id, type, url, label, petId} 追加进 works.json 清单（供刷新后拉取）
-// 请求体：{ dataBase64, type, ext?, contentType?, label?, petId? }
+//   2) 把 {id, type, url, coverUrl?, label, petId} 追加进 works.json 清单（供刷新后拉取）
+// 请求体：{ dataBase64, type, ext?, contentType?, label?, petId?, coverUrl?, coverBase64? }
+// 封面（可选，供视频列表预览）：coverUrl 直接复用相册种子图的公网 COS 地址；
+// 无公网源图时用 coverBase64 上传一张 jpg 副本。优先 coverUrl，随条目存 item.coverUrl。
 // 响应：{ url, item }   （清单写入失败时仍返回 url + warning，不丢文件）
 const WORK_TYPES = [
   'captured_photo', // 拍摄的照片
@@ -443,8 +484,9 @@ app.post('/api/upload', async (req, res) => {
             ? 'image/jpeg'
             : 'application/octet-stream');
     const type = WORK_TYPES.includes(body.type) ? body.type : 'created_image';
+    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-    const key = `works/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const key = `works/${stamp}.${ext}`;
     await putObjectP({
       Bucket: COS_BUCKET,
       Region: COS_REGION,
@@ -455,10 +497,34 @@ app.post('/api/upload', async (req, res) => {
     });
 
     const url = `https://${COS_BUCKET}.cos.${COS_REGION}.myqcloud.com/${key}`;
+
+    // 可选封面（供「我的创作」列表预览）：
+    //   1) 源图已是公网图（相册 COS 种子图）-> 前端传 coverUrl 外链直接复用，不重复上传；
+    //   2) 本地/拍摄素材 -> 前端传 coverBase64，这里上传一张 jpg 副本。
+    let coverUrl = null;
+    if (typeof body.coverUrl === 'string' && body.coverUrl.trim()) {
+      coverUrl = body.coverUrl.trim().slice(0, 300);
+    } else if (body.coverBase64) {
+      const coverBuffer = Buffer.from(String(body.coverBase64), 'base64');
+      if (coverBuffer.length) {
+        const coverKey = `works/${stamp}-cover.jpg`;
+        await putObjectP({
+          Bucket: COS_BUCKET,
+          Region: COS_REGION,
+          Key: coverKey,
+          Body: coverBuffer,
+          ContentType: 'image/jpeg',
+          ACL: 'public-read',
+        });
+        coverUrl = `https://${COS_BUCKET}.cos.${COS_REGION}.myqcloud.com/${coverKey}`;
+      }
+    }
+
     const item = {
-      id: `w-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: `w-${stamp}`,
       type,
       url,
+      ...(coverUrl ? { coverUrl } : {}),
       label: typeof body.label === 'string' ? body.label.slice(0, 100) : '',
       petId: typeof body.petId === 'string' ? body.petId.slice(0, 64) : '',
       createdAt: new Date().toISOString(),

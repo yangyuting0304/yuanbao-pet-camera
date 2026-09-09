@@ -8,7 +8,7 @@ class BeianFooter extends StatelessWidget {
   const BeianFooter({super.key});
 
   /// 网站备案号（与备案系统一致）
-  static const String beianNumber = '粤ICP备2026033457号-2';
+  static const String beianNumber = '粤ICP备2026033457号';
 
   /// 工信部备案管理系统
   static const String beianUrl = 'https://beian.miit.gov.cn/';

@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:pet_camera/app/app_image.dart';
 import 'package:pet_camera/app/app_generated_result_page.dart';
@@ -19,6 +20,7 @@ import 'package:pet_camera/app/app_photo_preview_panel.dart';
 import 'package:pet_camera/app/app_back_button.dart';
 import 'package:pet_camera/app/app_loading_view.dart';
 import 'package:pet_camera/app/app_top_nav_bar.dart';
+import 'package:pet_camera/app/beian_footer.dart';
 import 'package:pet_camera/app/media_platform.dart';
 import 'package:pet_camera/app/mingcute_icons.dart';
 import 'package:pet_camera/app/tokens.dart';
@@ -3606,45 +3608,51 @@ class _AlbumViewState extends State<_AlbumView> {
           delegate: SliverChildBuilderDelegate((context, i) {
             final w = works[i];
             if (w.isVideo) {
+              final cover = w.coverUrl;
               return GestureDetector(
                 onTap: () => _playCreatedVideo(context, w),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(AppUi.radiusCard),
-                  child: Container(
-                    color: Colors.black,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        const Center(
-                          child: MingCuteIcon(
-                            MingCuteIcons.playCircle,
-                            size: 32,
-                            color: Colors.white70,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // 有封面（AI 成片用源照片生成）时显示图；旧数据回退黑底。
+                      if (cover != null && cover.isNotEmpty)
+                        Image(
+                          image: CachedNetworkImageProvider(cover),
+                          fit: BoxFit.cover,
+                        )
+                      else
+                        Container(color: Colors.black),
+                      const Center(
+                        child: MingCuteIcon(
+                          MingCuteIcons.playCircle,
+                          size: 32,
+                          color: Colors.white70,
+                        ),
+                      ),
+                      Positioned(
+                        left: 6,
+                        bottom: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.55),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            '视频',
+                            style: TextStyle(
+                              fontSize: AppUi.fontCaption,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
-                        Positioned(
-                          left: 6,
-                          bottom: 6,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.55),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: const Text(
-                              '视频',
-                              style: TextStyle(
-                                fontSize: AppUi.fontCaption,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               );
@@ -5812,10 +5820,51 @@ class SettingsPage extends ConsumerWidget {
                     color: t.textSecondary,
                   ),
                 ),
+                const SizedBox(height: 16),
+                Divider(
+                  height: 1,
+                  thickness: 0.5,
+                  color: t.textTertiary,
+                ),
+                const SizedBox(height: 12),
+                _AboutBeianLink(
+                  text: BeianFooter.beianNumber,
+                  url: BeianFooter.beianUrl,
+                ),
+                const SizedBox(height: 4),
+                _AboutBeianLink(
+                  text: BeianFooter.gonganNumber,
+                  url: BeianFooter.gonganUrl,
+                ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 「设置 → 关于」里的备案号链接行：点击跳转工信部 / 公安备案查询平台。
+class _AboutBeianLink extends StatelessWidget {
+  const _AboutBeianLink({required this.text, required this.url});
+
+  final String text;
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return InkWell(
+      onTap: () => launchUrl(Uri.parse(url)),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: AppUi.fontCaption,
+          color: t.textSecondary,
+          decoration: TextDecoration.underline,
+          decorationColor: t.textTertiary,
+        ),
       ),
     );
   }
@@ -6077,6 +6126,12 @@ class _CreatedVideoDialog extends StatefulWidget {
 }
 
 class _CreatedVideoDialogState extends State<_CreatedVideoDialog> {
+  /// 预览弹窗最大宽度（与 build 里 ConstrainedBox 保持一致）。
+  static const double _dialogMaxWidth = 360;
+
+  /// 弹窗内容内边距。
+  static const double _dialogPadding = 12;
+
   VideoPlayerController? _c;
 
   /// 原生端把远程视频整包下载后的本地临时文件路径（dispose 时释放）。
@@ -6207,6 +6262,46 @@ class _CreatedVideoDialogState extends State<_CreatedVideoDialog> {
           );
   }
 
+  /// 构建播放区：按视频真实宽高比自适应尺寸（contain），
+  /// 横屏/竖屏视频都不会被固定 9:16 竖框拉伸。
+  Widget _buildPlayerBox(BuildContext context) {
+    final c = _c;
+    final bool initialized = _ready && c != null && c.value.isInitialized;
+    // 已初始化用真实比例；未就绪（加载中 / 出错）沿用竖屏占位比例。
+    final double aspect = initialized && c.value.aspectRatio > 0
+        ? c.value.aspectRatio
+        : 9 / 16;
+
+    final double screenHeight = MediaQuery.sizeOf(context).height;
+    // 可用宽：弹窗上限宽度 - 两侧内边距。
+    final double maxW = _dialogMaxWidth - _dialogPadding * 2;
+    // 可用高：屏幕高度扣除弹窗上下 inset(24×2) 与弹窗内其它内容
+    // （内边距 12×2 + 间距 12 + 底部按钮约 48），并限幅防止极端情况溢出。
+    const double chromeHeight = 24 * 2 + _dialogPadding * 2 + 12 + 48;
+    final double maxH = (screenHeight - chromeHeight)
+        .clamp(160.0, _dialogMaxWidth * 16 / 9)
+        .toDouble();
+
+    // contain 语义：先铺满可用宽，过高则改为按高度折算，始终不变形。
+    double w = maxW;
+    double h = w / aspect;
+    if (h > maxH) {
+      h = maxH;
+      w = h * aspect;
+    }
+
+    return Container(
+      width: w,
+      height: h,
+      decoration: BoxDecoration(
+        color: Colors.black,
+        borderRadius: BorderRadius.circular(AppUi.radiusCard),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: _buildPreview(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
@@ -6216,23 +6311,13 @@ class _CreatedVideoDialogState extends State<_CreatedVideoDialog> {
         borderRadius: BorderRadius.circular(AppUi.radiusCard),
       ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 360),
+        constraints: const BoxConstraints(maxWidth: _dialogMaxWidth),
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(_dialogPadding),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              AspectRatio(
-                aspectRatio: 9 / 16,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.black,
-                    borderRadius: BorderRadius.circular(AppUi.radiusCard),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: _buildPreview(),
-                ),
-              ),
+              _buildPlayerBox(context),
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,

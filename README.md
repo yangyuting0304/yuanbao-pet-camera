@@ -39,4 +39,5 @@ flutter build web --release --no-web-resources-cdn --base-href=/yuanbao-pet-came
 - `DEPLOY.md` / `ECS_DEPLOY.md`：部署与运维说明
 
 ## 备案
-粤ICP备2026033457号-2
+粤ICP备2026033457号
+粤公网安备44030002016568号

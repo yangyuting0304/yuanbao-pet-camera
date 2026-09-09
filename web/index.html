@@ -1,7 +1,7 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-  <!--
+  <head>
+    <!--
     If you are serving your web app in a path other than the root, change the
     href value below to reflect the base path you are serving from.
 
@@ -14,116 +14,162 @@
     This is a placeholder for base href that will be replaced by the value of
     the `--base-href` argument provided to `flutter build`.
   -->
-  <base href="$FLUTTER_BASE_HREF">
+    <base href="$FLUTTER_BASE_HREF" />
 
-  <meta charset="UTF-8">
-  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="元宝拍拍 - AI 宠物影像 App">
-  <!-- 移动端必须声明视口，否则页面会按桌面宽度缩放，导致 loading 在手机上显得特别小。 -->
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
-  >
+    <meta charset="UTF-8" />
+    <meta content="IE=Edge" http-equiv="X-UA-Compatible" />
+    <meta name="description" content="元宝拍拍 - AI 宠物影像 App" />
+    <!-- 移动端必须声明视口，否则页面会按桌面宽度缩放，导致 loading 在手机上显得特别小。 -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
 
-  <!-- iOS meta tags & icons -->
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="元宝拍拍">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+    <!-- iOS meta tags & icons -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="元宝拍拍" />
+    <link rel="apple-touch-icon" href="icons/Icon-192.png" />
 
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="favicon.png" />
 
-  <title>元宝拍拍</title>
-  <link rel="manifest" href="manifest.json">
+    <title>元宝拍拍</title>
+    <link rel="manifest" href="manifest.json" />
 
-  <style>
-    /* 启动加载页：在 Flutter 首帧前展示，首帧后由脚本移除。 */
-    html, body { margin: 0; padding: 0; height: 100%; background: #FFFFFF; }
-    #app-loading {
-      position: fixed; inset: 0; display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 20px;
-      padding: 24px;
-      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-      background: #FFFFFF;
-      color: #000000;
-      text-align: center;
-      z-index: 9999;
-    }
-    #app-loading .spinner {
-      width: clamp(56px, 15vw, 72px);
-      height: clamp(56px, 15vw, 72px);
-      border-radius: 50%;
-      border: 5px solid #F7E98B;
-      border-top-color: #FEDE2C;
-      animation: spin 0.9s linear infinite;
-    }
-    #app-loading .txt {
-      font-size: clamp(16px, 4.2vw, 18px);
-      line-height: 24px;
-      letter-spacing: 0.5px;
-    }
-    #app-loading .slow-tip {
-      display: none;
-      max-width: 260px;
-      font-size: 14px;
-      line-height: 20px;
-      color: #666666;
-    }
-    #app-loading.is-slow .slow-tip { display: block; }
-    #app-loading .beian-static {
-      position: absolute; bottom: 16px; left: 0; right: 0;
-      text-align: center; font-size: 12px; color: #8B6FC4;
-    }
-    #app-loading .beian-static a { color: #8B6FC4; text-decoration: none; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-  </style>
-</head>
-<body>
-  <div id="app-loading">
-    <div class="spinner"></div>
-    <div class="txt">元宝拍拍加载中…</div>
-    <div class="slow-tip">手机首次打开需要下载较大的预览资源，请稍等几秒；如果 15 秒后还没进入，请刷新一次。</div>
-    <div class="beian-static">
-      © 2026 杨玉婷作品集 |
-      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">粤ICP备2026033457号-2</a> |
-      <a href="https://www.beian.gov.cn/portal/registerSystemInfo?recordcode=44030002016568" target="_blank" rel="noopener">粤公网安备44030002016568号</a>
+    <style>
+      /* 启动加载页：在 Flutter 首帧前展示，首帧后由脚本移除。 */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: #ffffff;
+      }
+      #app-loading {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        padding: 24px;
+        font-family:
+          -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+        background: #ffffff;
+        color: #000000;
+        text-align: center;
+        z-index: 9999;
+      }
+      #app-loading .spinner {
+        width: clamp(56px, 15vw, 72px);
+        height: clamp(56px, 15vw, 72px);
+        border-radius: 50%;
+        border: 5px solid #f7e98b;
+        border-top-color: #fede2c;
+        animation: spin 0.9s linear infinite;
+      }
+      #app-loading .txt {
+        font-size: clamp(16px, 4.2vw, 18px);
+        line-height: 24px;
+        letter-spacing: 0.5px;
+      }
+      #app-loading .slow-tip {
+        display: none;
+        max-width: 260px;
+        font-size: 14px;
+        line-height: 20px;
+        color: #666666;
+      }
+      #app-loading.is-slow .slow-tip {
+        display: block;
+      }
+      #app-loading .beian-static {
+        position: absolute;
+        bottom: 16px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-size: 12px;
+        color: #8b6fc4;
+      }
+      #app-loading .beian-static a {
+        color: #8b6fc4;
+        text-decoration: none;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app-loading">
+      <div class="spinner"></div>
+      <div class="txt">元宝拍拍加载中…</div>
+      <div class="slow-tip">
+        手机首次打开需要下载较大的预览资源，请稍等几秒；如果 15
+        秒后还没进入，请刷新一次。
+      </div>
+      <div class="beian-static">
+        © 2026 杨玉婷作品集 |
+        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener"
+          >粤ICP备2026033457号</a
+        >
+        |
+        <a
+          href="https://www.beian.gov.cn/portal/registerSystemInfo?recordcode=44030002016568"
+          target="_blank"
+          rel="noopener"
+          >粤公网安备44030002016568号</a
+        >
+      </div>
     </div>
-  </div>
-  <script>
-    // Flutter 首帧渲染后移除启动加载层，避免它继续遮挡页面。
-    var slowLoadingTimer = window.setTimeout(function () {
-      var loading = document.getElementById('app-loading');
-      if (loading) {
-        loading.classList.add('is-slow');
-      }
-    }, 4000);
+    <script>
+      // Flutter 首帧渲染后移除启动加载层，避免它继续遮挡页面。
+      var slowLoadingTimer = window.setTimeout(function () {
+        var loading = document.getElementById("app-loading");
+        if (loading) {
+          loading.classList.add("is-slow");
+        }
+      }, 4000);
 
-    window.addEventListener('flutter-first-frame', function () {
-      window.clearTimeout(slowLoadingTimer);
-      var loading = document.getElementById('app-loading');
-      if (loading) {
-        loading.remove();
-      }
-    });
-  </script>
-  <script>
-    // 显式加载（替代 flutter_bootstrap.js 内联调用）：
-    // 1) canvasKitBaseUrl 指向产物内自带的 canvaskit/ 目录 —— 默认会从
-    //    www.gstatic.com（Google CDN）下载渲染引擎，国内网络直接断连，
-    //    导致 release 页白屏无法进入（debug 模式不用 CanvasKit 所以前期未暴露）。
-    // 2) 相对路径随 --base-href 解析，本地/生产（COS 子路径）均适用。
-    {{flutter_js}}
-    {{flutter_build_config}}
+      window.addEventListener("flutter-first-frame", function () {
+        window.clearTimeout(slowLoadingTimer);
+        var loading = document.getElementById("app-loading");
+        if (loading) {
+          loading.remove();
+        }
+      });
+    </script>
+    <script>
+      // 显式加载（替代 flutter_bootstrap.js 内联调用）：
+      // 1) canvasKitBaseUrl 指向产物内自带的 canvaskit/ 目录 —— 默认会从
+      //    www.gstatic.com（Google CDN）下载渲染引擎，国内网络直接断连，
+      //    导致 release 页白屏无法进入（debug 模式不用 CanvasKit 所以前期未暴露）。
+      // 2) 相对路径随 --base-href 解析，本地/生产（COS 子路径）均适用。
+      {{flutter_js}}
+      {{flutter_build_config}}
 
-    _flutter.loader.load({
-      config: {
-        canvasKitBaseUrl: "canvaskit",
-      },
-      serviceWorkerSettings: {
-        serviceWorkerVersion: {{flutter_service_worker_version}},
-      },
-    });
-  </script>
-</body>
+      // 新版 Flutter 已弃用通过 flutter.js 传入 serviceWorkerVersion 的方式
+      //（构建产物中会附带弃用注释），且其生成的 flutter_service_worker.js
+      // 只负责卸载历史缓存的 service worker，不再做离线缓存。
+      // 因此这里改为直接用原生 API 卸载历史遗留的 SW，避免旧缓存导致页面不更新。
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function (registrations) {
+          registrations.forEach(function (registration) {
+            registration.unregister();
+          });
+        });
+      }
+
+      _flutter.loader.load({
+        config: {
+          canvasKitBaseUrl: "canvaskit",
+        },
+      });
+    </script>
+  </body>
 </html>

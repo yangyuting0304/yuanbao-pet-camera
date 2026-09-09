@@ -62,7 +62,8 @@ enum AiVideoTaskStatus {
   unknown,
 }
 
-/// 成片生成请求（首帧成片，分辨率固定 720P，由服务端写死）。
+/// 成片生成请求（分辨率由服务端按所选模型固定，默认 720P）。
+/// [model] 为空表示走服务端默认首帧模型；可选 wan2.6-r2v / wan2.6-r2v-flash。
 class AiVideoRequest {
   const AiVideoRequest({
     required this.imageBytes,
@@ -70,12 +71,14 @@ class AiVideoRequest {
     required this.negativePrompt,
     required this.duration,
     required this.watermark,
+    this.model,
   });
   final Uint8List imageBytes;
   final String prompt;
   final String negativePrompt;
-  final int duration; // 2-15 秒
+  final int duration; // 秒；首帧 2-15，参考生视频 2-10（服务端会按模型钳制）
   final bool watermark;
+  final String? model; // 视频模型标识；null = 服务端默认（VIDEO_MODEL）
 }
 
 /// 单次状态查询结果（GET /api/ai-video/status）。
@@ -296,6 +299,7 @@ class AiVideoService {
             'negativePrompt': req.negativePrompt,
             'duration': req.duration.clamp(2, 15),
             'watermark': req.watermark,
+            if (req.model != null && req.model!.isNotEmpty) 'model': req.model!,
           }),
         )
         .timeout(const Duration(seconds: 30));

@@ -55,7 +55,7 @@ class AppTopNavBar extends ConsumerWidget {
 
 /// 顶部“当前任务”入口。
 /// - generating：下载图标 + 细圆环（轮询中）；
-/// - succeeded：品牌黄底对勾 + 红点（生成成功未查看）；
+/// - succeeded：品牌黄底对勾（生成成功，入口保留直到查看/处理）；
 /// - viewed：灰底对勾（已查看未保存，入口保留直到保存/下载/丢弃）。
 class _TaskEntryButton extends StatelessWidget {
   const _TaskEntryButton({required this.task, required this.onTap});
@@ -109,20 +109,6 @@ class _TaskEntryButton extends StatelessWidget {
                 Icons.check_circle,
                 size: 20,
                 color: iconColor,
-              ),
-            if (succeeded)
-              // 未查看红点。
-              Positioned(
-                top: 5,
-                right: 5,
-                child: Container(
-                  width: 8,
-                  height: 8,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFFF4E62),
-                    shape: BoxShape.circle,
-                  ),
-                ),
               ),
           ],
         ),

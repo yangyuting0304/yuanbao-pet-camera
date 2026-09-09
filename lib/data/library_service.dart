@@ -39,6 +39,7 @@ class LibraryItem {
     required this.id,
     required this.type,
     required this.url,
+    this.coverUrl,
     this.label = '',
     this.petId = '',
     this.albumId = '',
@@ -49,6 +50,9 @@ class LibraryItem {
   final String id;
   final LibraryType type;
   final String url;
+
+  /// 封面图公网地址（AI 视频用源照片生成；无值时列表显示兜底图标）。
+  final String? coverUrl;
   final String label;
   final String petId;
   final String albumId;
@@ -78,6 +82,7 @@ class LibraryItem {
     id: id,
     type: type,
     url: url,
+    coverUrl: coverUrl,
     label: label,
     petId: petId,
     albumId: albumId,
@@ -89,6 +94,7 @@ class LibraryItem {
     id: (j['id'] ?? '') as String,
     type: LibraryType.fromValue(j['type'] as String?),
     url: (j['url'] ?? '') as String,
+    coverUrl: j['coverUrl'] as String?,
     label: (j['label'] ?? '') as String,
     petId: (j['petId'] ?? '') as String,
     albumId: (j['albumId'] ?? '') as String,
@@ -99,6 +105,7 @@ class LibraryItem {
     'id': id,
     'type': type.value,
     'url': url,
+    if (coverUrl != null && coverUrl!.isNotEmpty) 'coverUrl': coverUrl,
     'label': label,
     'petId': petId,
     'albumId': albumId,
@@ -170,6 +177,9 @@ class LibraryService {
   }
 
   /// 上传作品并登记进 works.json，返回带 url 的条目。
+  /// 封面二选一（优先级见后端）：
+  ///   [coverUrl]   源图已是公网图（相册 COS 种子图）时直接复用其 URL，不重复上传；
+  ///   [coverBytes] 本地/拍摄素材时上传一份 jpg 副本存为 item.coverUrl。
   Future<LibraryItem> uploadWork({
     required Uint8List bytes,
     required LibraryType type,
@@ -177,6 +187,8 @@ class LibraryService {
     String? contentType,
     String label = '',
     String petId = '',
+    String? coverUrl,
+    Uint8List? coverBytes,
   }) async {
     final uri = _uriFor('/api/upload');
     if (uri == null) throw const LibraryException('未配置代理（AI_VIDEO_PROXY_URL / AI_PROXY_URL）');
@@ -184,13 +196,16 @@ class LibraryService {
         .post(
           uri,
           headers: <String, String>{'Content-Type': 'application/json'},
-          body: jsonEncode(<String, String>{
+          body: jsonEncode(<String, Object>{
             'dataBase64': base64Encode(bytes),
             'type': type.value,
             'ext': ext,
             if (contentType != null) 'contentType': contentType,
             'label': label,
             'petId': petId,
+            if (coverUrl != null && coverUrl.isNotEmpty) 'coverUrl': coverUrl,
+            if (coverBytes != null && coverBytes.isNotEmpty)
+              'coverBase64': base64Encode(coverBytes),
           }),
         )
         .timeout(const Duration(minutes: 5));
@@ -226,6 +241,8 @@ class WorksNotifier extends AsyncNotifier<List<LibraryItem>> {
     String? contentType,
     String label = '',
     String petId = '',
+    String? coverUrl,
+    Uint8List? coverBytes,
   }) async {
     final item = await ref
         .read(libraryServiceProvider)
@@ -236,6 +253,8 @@ class WorksNotifier extends AsyncNotifier<List<LibraryItem>> {
           contentType: contentType,
           label: label,
           petId: petId,
+          coverUrl: coverUrl,
+          coverBytes: coverBytes,
         );
     state = AsyncData(<LibraryItem>[item, ...?state.value]);
     return item;

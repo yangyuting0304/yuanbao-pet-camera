@@ -10,7 +10,8 @@ import 'package:pet_camera/app/ai_video_result_page.dart'
     show AiVideoResultActionsBar, AiVideoResultView;
 import 'package:pet_camera/app/media_platform.dart';
 import 'package:pet_camera/app/mingcute_icons.dart';
-import 'package:pet_camera/app/short_video_page.dart' show ShortVideoLibraryPage;
+import 'package:pet_camera/app/short_video_page.dart'
+    show ShortVideoLibraryPage;
 import 'package:pet_camera/app/tokens.dart';
 import 'package:pet_camera/data/ai_video_service.dart';
 import 'package:pet_camera/data/captured_photos.dart';
@@ -21,6 +22,85 @@ import 'package:pet_camera/data/task_center.dart';
 import 'package:pet_camera/data/task_store.dart';
 
 const _fieldBorderColor = Color(0xFFE2E4E6);
+
+/// 玩法类型：首帧成片 / 参考生视频（影响素材文案等 UI 语义）。
+enum _VideoModelKind { i2v, r2v }
+
+/// 页面可选视频模型（对应请求体 model 字段，后端按此动态路由适配器）。
+/// 规格表与后端保持一致（见 cloud_functions/ai_portrait/lib/videoAdapter.js
+/// 与 models/dashscope-i2v.js、dashscope-r2v.js）：只列可用的具体模型，
+/// 时长区间由 [minDuration]/[maxDuration] 驱动 UI，固定时长模型两者相等。
+class _VideoModelOption {
+  const _VideoModelOption({
+    required this.id,
+    required this.label,
+    required this.subtitle,
+    required this.kind,
+    this.minDuration = 2,
+    this.maxDuration = 15,
+  });
+
+  /// 传给 /api/ai-video 的 model 值；'' = 不传，走服务端默认首帧模型。
+  final String id;
+  final String label;
+  final String subtitle;
+  final _VideoModelKind kind;
+
+  /// 时长可用区间（秒）；[minDuration] == [maxDuration] 表示该模型时长固定。
+  final int minDuration;
+  final int maxDuration;
+
+  bool get fixed => minDuration == maxDuration;
+}
+
+const List<_VideoModelOption> _kVideoModelOptions = <_VideoModelOption>[
+  _VideoModelOption(
+    id: 'wanx2.1-i2v-plus',
+    label: 'wanx2.1-i2v-plus',
+    subtitle: '首帧 · 标准档，720P 固定 5 秒。效果一般，测试用',
+    kind: _VideoModelKind.i2v,
+    minDuration: 5,
+    maxDuration: 5,
+  ),
+  _VideoModelOption(
+    id: 'wanx2.1-i2v-turbo',
+    label: 'wanx2.1-i2v-turbo',
+    subtitle: '首帧 · 快速档，时长可选 3-5 秒。效果一般，测试用',
+    kind: _VideoModelKind.i2v,
+    minDuration: 3,
+    maxDuration: 5,
+  ),
+  _VideoModelOption(
+    id: 'wan2.2-i2v-flash',
+    label: 'wan2.2-i2v-flash',
+    subtitle: '首帧 · 低成本档，固定 5 秒',
+    kind: _VideoModelKind.i2v,
+    minDuration: 5,
+    maxDuration: 5,
+  ),
+  _VideoModelOption(
+    id: 'wan2.2-i2v-plus',
+    label: 'wan2.2-i2v-plus',
+    subtitle: '首帧 · 高质量档，固定 5 秒（无 720P，走 480P/1080P）',
+    kind: _VideoModelKind.i2v,
+    minDuration: 5,
+    maxDuration: 5,
+  ),
+  _VideoModelOption(
+    id: 'wan2.6-r2v',
+    label: 'wan2.6-r2v · 参考生视频',
+    subtitle: '参考照片只提取毛孩形象特征，场景与动作由提示词决定',
+    kind: _VideoModelKind.r2v,
+    maxDuration: 10,
+  ),
+  _VideoModelOption(
+    id: 'wan2.6-r2v-flash',
+    label: 'wan2.6-r2v-flash · 参考生视频',
+    subtitle: '同参考生视频，Flash 档更快更省（默认无声 · 720P）',
+    kind: _VideoModelKind.r2v,
+    maxDuration: 10,
+  ),
+];
 
 /// 页面阶段：填写素材 -> 生成中 -> 结果预览。
 enum _Phase { compose, generating, result }
@@ -38,6 +118,10 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
 
   // 素材（首帧图）。
   Uint8List? _imageBytes;
+
+  /// 源图可复用的公网 URL（毛孩相册里的种子图本身在 COS 上）。
+  /// 图库导入/拍摄等本地素材为 null，保存封面时需上传副本。
+  String? _sourceImageUrl;
   String? _imageError; // 图片未选时的原处提示
 
   // 提示词。
@@ -47,8 +131,19 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
   bool _optimizing = false; // AI 优化进行中（按钮 loading）
 
   // 生成参数。
+  // 视频模型：'' = 服务端默认（首帧成片）；wan2.6-r2v / wan2.6-r2v-flash = 参考生视频。
+  String _modelId = '';
   double _duration = 8;
   bool _watermark = true;
+
+  /// 是否参考生视频玩法：素材语义为「参考照片」。
+  bool get _isR2v => _selectedVideoModel.kind == _VideoModelKind.r2v;
+
+  /// 当前选中的模型（含默认项），用于展示说明文案。
+  _VideoModelOption get _selectedVideoModel => _kVideoModelOptions.firstWhere(
+    (m) => m.id == _modelId,
+    orElse: () => _kVideoModelOptions.first,
+  );
 
   // 生成结果与错误。
   AiVideoResult? _result;
@@ -79,10 +174,8 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
     final task = ref.read(taskCenterProvider).task;
     if (task == null || task.stage.finished) return;
     final content = switch (task.stage) {
-      TaskStage.generating =>
-        '有一个视频正在生成中。现在生成新视频会丢弃它，建议先等它生成完。',
-      TaskStage.succeeded =>
-        '上次生成的视频还没查看和保存。现在生成新视频会丢弃它，建议先去处理。',
+      TaskStage.generating => '有一个视频正在生成中。现在生成新视频会丢弃它，建议先等它生成完。',
+      TaskStage.succeeded => '上次生成的视频还没查看和保存。现在生成新视频会丢弃它，建议先去处理。',
       _ => '上次生成的视频看过但还没保存。现在生成新视频会丢弃它，建议先保存或下载。',
     };
     showDialog<void>(
@@ -119,6 +212,93 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
     _promptCtrl.dispose();
     _negativeCtrl.dispose();
     super.dispose();
+  }
+
+  // ============ 模型选择 ============
+
+  /// 模型选择：底部弹层（移动端友好），每行展示名称+玩法/时长说明，当前项打勾。
+  Future<void> _pickModel() async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: context.tokens.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) {
+        final s = sheetCtx.tokens;
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                child: Text(
+                  '选择模型',
+                  style: TextStyle(
+                    fontSize: AppUi.fontTitle,
+                    fontWeight: FontWeight.w500,
+                    color: s.textPrimary,
+                  ),
+                ),
+              ),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  itemCount: _kVideoModelOptions.length,
+                  itemBuilder: (ctx, index) {
+                    final m = _kVideoModelOptions[index];
+                    final selected = m.id == _modelId;
+                    return ListTile(
+                      title: Text(
+                        m.label,
+                        style: TextStyle(
+                          fontSize: AppUi.fontBody,
+                          fontWeight: selected
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                          color: s.textPrimary,
+                        ),
+                      ),
+                      subtitle: Text(
+                        m.subtitle,
+                        style: TextStyle(
+                          fontSize: AppUi.fontCaption,
+                          height: AppUi.lineHeight(AppUi.fontCaption),
+                          color: s.textSecondary,
+                        ),
+                      ),
+                      trailing: selected
+                          ? const Icon(
+                              Icons.check_rounded,
+                              size: 22,
+                              color: Colors.black,
+                            )
+                          : null,
+                      onTap: () => Navigator.pop(ctx, m.id),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        );
+      },
+    );
+    if (picked == null || picked == _modelId) return;
+    setState(() {
+      _modelId = picked;
+      // 时长可用区间随模型变化（参考生视频上限 10s、旧档固定 5s 等），
+      // 超出时收敛到区间内，避免提交后被服务端钳制。
+      final m = _selectedVideoModel;
+      _duration = _duration
+          .clamp(m.minDuration.toDouble(), m.maxDuration.toDouble())
+          .round()
+          .toDouble();
+    });
   }
 
   // ============ 素材选择 ============
@@ -207,6 +387,7 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
       if (picked.bytes != null) {
         setState(() {
           _imageBytes = picked.bytes;
+          _sourceImageUrl = null;
           _imageError = null;
         });
       } else if (picked.url != null) {
@@ -216,6 +397,8 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
         }
         setState(() {
           _imageBytes = resp.bodyBytes;
+          // 相册种子图是 COS 公网图，封面直接复用其 URL，避免重复上传占空间。
+          _sourceImageUrl = picked.url;
           _imageError = null;
         });
       }
@@ -235,6 +418,7 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
       if (f == null || f.bytes == null) return;
       setState(() {
         _imageBytes = f.bytes;
+        _sourceImageUrl = null;
         _imageError = null;
       });
     } catch (e) {
@@ -249,6 +433,7 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
     if (latest != null && mounted) {
       setState(() {
         _imageBytes = latest.bytes;
+        _sourceImageUrl = null;
         _imageError = null;
       });
     }
@@ -318,6 +503,7 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
       negativePrompt: _negativeCtrl.text.trim(),
       duration: _duration.round(),
       watermark: _watermark,
+      model: _modelId.isEmpty ? null : _modelId,
     );
     try {
       // 演示模式（未配置代理）：本地模拟，不产生 taskId，不进任务中心。
@@ -391,10 +577,7 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
     try {
       final bytes = await _ensureVideoBytes(result);
       final stamp = DateTime.now().millisecondsSinceEpoch;
-      await MediaPlatform.downloadBytes(
-        bytes,
-        'yuanbao_video_$stamp.mp4',
-      );
+      await MediaPlatform.downloadBytes(bytes, 'yuanbao_video_$stamp.mp4');
       // 已下载 = 任务闭环，顶部「当前任务」入口不再提醒。
       ref.read(taskCenterProvider.notifier).markProcessed();
       if (mounted) {
@@ -431,16 +614,16 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
             type: LibraryType.createdVideo,
             ext: 'mp4',
             label: _promptCtrl.text.trim(),
+            // 封面：相册种子图直接复用其 COS URL（不重复上传占空间）；
+            // 本地/拍摄素材没有公网图，才上传一份源图副本作封面。
+            coverUrl: _sourceImageUrl,
+            coverBytes: _sourceImageUrl == null ? _imageBytes : null,
           );
       // 已保存到相册 = 任务闭环，顶部「当前任务」入口不再提醒。
       ref.read(taskCenterProvider.notifier).markProcessed();
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(
-            content: Text('已上传云端并保存到相册·我的创作'),
-          ),
-        );
+        ..showSnackBar(const SnackBar(content: Text('已上传云端并保存到相册·我的创作')));
     } catch (e) {
       messenger
         ..hideCurrentSnackBar()
@@ -651,9 +834,71 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
       children: [
         Text(
-          '素材 · 首帧图',
+          '模型',
           style: TextStyle(
-            fontSize: AppUi.fontHeadline,
+            fontSize: AppUi.fontTitle,
+            fontWeight: FontWeight.w400,
+            color: t.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '点选切换模型，不同模型效果与计费不同',
+          style: TextStyle(fontSize: AppUi.fontCaption, color: t.textSecondary),
+        ),
+        const SizedBox(height: 12),
+        GestureDetector(
+          onTap: _pickModel,
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF6F8FA),
+              borderRadius: BorderRadius.circular(AppUi.radiusCard),
+              border: Border.all(color: _fieldBorderColor),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _selectedVideoModel.label,
+                        style: TextStyle(
+                          fontSize: AppUi.fontBody,
+                          fontWeight: FontWeight.w500,
+                          color: t.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _selectedVideoModel.subtitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: AppUi.fontCaption,
+                          color: t.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(
+                  Icons.arrow_drop_down,
+                  size: 24,
+                  color: Colors.black,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        Text(
+          _isR2v ? '素材 · 参考照片' : '素材 · 首帧图',
+          style: TextStyle(
+            fontSize: AppUi.fontTitle,
             fontWeight: FontWeight.w400,
             color: t.textPrimary,
           ),
@@ -673,7 +918,7 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
               ),
             ),
             clipBehavior: Clip.antiAlias,
-                    child: _imageBytes == null
+            child: _imageBytes == null
                 ? Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -697,20 +942,16 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
         ),
         const SizedBox(height: 8),
         Text(
-          'JPG/PNG ≤20MB · 相册 / 图库 / 拍照',
-          style: TextStyle(
-            fontSize: AppUi.fontCaption,
-            color: t.textSecondary,
-          ),
+          _isR2v
+              ? 'JPG/PNG ≤20MB · 相册 / 图库 / 拍照 —— 只提取毛孩形象特征'
+              : 'JPG/PNG ≤20MB · 相册 / 图库 / 拍照',
+          style: TextStyle(fontSize: AppUi.fontCaption, color: t.textSecondary),
         ),
         if (_imageError != null) ...[
           const SizedBox(height: 6),
           Text(
             _imageError!,
-            style: TextStyle(
-              fontSize: AppUi.fontCaption,
-              color: t.error,
-            ),
+            style: TextStyle(fontSize: AppUi.fontCaption, color: t.error),
           ),
         ],
         const SizedBox(height: 24),
@@ -721,7 +962,7 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
             Text(
               '选个场景，让毛孩动起来',
               style: TextStyle(
-                fontSize: AppUi.fontHeadline,
+                fontSize: AppUi.fontTitle,
                 height: 28 / AppUi.fontHeadline,
                 fontWeight: FontWeight.w400,
                 color: t.textPrimary,
@@ -827,7 +1068,7 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
         Text(
           '反向提示词',
           style: TextStyle(
-            fontSize: AppUi.fontHeadline,
+            fontSize: AppUi.fontTitle,
             height: 28 / AppUi.fontHeadline,
             fontWeight: FontWeight.w400,
             color: t.textPrimary,
@@ -874,39 +1115,45 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
             Text(
               '时长',
               style: TextStyle(
-                fontSize: AppUi.fontHeadline,
+                fontSize: AppUi.fontTitle,
                 height: 28 / AppUi.fontHeadline,
                 fontWeight: FontWeight.w400,
                 color: t.textPrimary,
               ),
             ),
             Text(
-              '${_duration.round()} 秒（2-15）',
-              style: TextStyle(
-                fontSize: AppUi.fontBody,
-                color: t.textPrimary,
-              ),
+              _selectedVideoModel.fixed
+                  ? '固定 ${_selectedVideoModel.maxDuration} 秒'
+                  : '${_duration.round()} 秒'
+                        '（${_selectedVideoModel.minDuration}-'
+                        '${_selectedVideoModel.maxDuration}）',
+              style: TextStyle(fontSize: AppUi.fontBody, color: t.textPrimary),
             ),
           ],
         ),
         const SizedBox(height: 8),
-        SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            activeTrackColor: Colors.black,
-            inactiveTrackColor: const Color(0xFFE6E6E6),
-            thumbColor: Colors.black,
-            overlayColor: Colors.transparent,
-            trackHeight: 4,
+        if (_selectedVideoModel.fixed)
+          const SizedBox(height: 16)
+        else
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: Colors.black,
+              inactiveTrackColor: const Color(0xFFE6E6E6),
+              thumbColor: Colors.black,
+              overlayColor: Colors.transparent,
+              trackHeight: 4,
+            ),
+            child: Slider(
+              min: _selectedVideoModel.minDuration.toDouble(),
+              max: _selectedVideoModel.maxDuration.toDouble(),
+              value: _duration,
+              divisions:
+                  _selectedVideoModel.maxDuration -
+                  _selectedVideoModel.minDuration,
+              label: '${_duration.round()} 秒',
+              onChanged: (v) => setState(() => _duration = v),
+            ),
           ),
-          child: Slider(
-            min: 2,
-            max: 15,
-            value: _duration,
-            divisions: 13,
-            label: '${_duration.round()} 秒',
-            onChanged: (v) => setState(() => _duration = v),
-          ),
-        ),
         const SizedBox(height: 12),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -914,7 +1161,7 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
             Text(
               '清晰度',
               style: TextStyle(
-                fontSize: AppUi.fontHeadline,
+                fontSize: AppUi.fontTitle,
                 height: 28 / AppUi.fontHeadline,
                 fontWeight: FontWeight.w400,
                 color: t.textPrimary,
@@ -933,7 +1180,7 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
             Text(
               'AI 水印',
               style: TextStyle(
-                fontSize: AppUi.fontHeadline,
+                fontSize: AppUi.fontTitle,
                 height: 28 / AppUi.fontHeadline,
                 fontWeight: FontWeight.w400,
                 color: t.textPrimary,
@@ -1003,7 +1250,6 @@ class _AiVideoPageState extends ConsumerState<AiVideoPage> {
       ),
     );
   }
-
 }
 
 /// 相册选择返回：内存字节 或 远程 URL（二选一）。
@@ -1079,5 +1325,3 @@ class _AlbumPickerSheet extends StatelessWidget {
     );
   }
 }
-
-
