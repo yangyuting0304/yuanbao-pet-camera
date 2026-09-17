@@ -1,0 +1,26 @@
+/// 兜底实现（非 Web / 非移动端平台，实际不会走到）。
+library;
+
+import 'dart:typed_data';
+
+import 'package:audioplayers/audioplayers.dart';
+import 'package:video_player/video_player.dart';
+
+Future<String> createMediaUrl(Uint8List bytes, String mime) =>
+    throw UnsupportedError('当前平台不支持短片媒体播放');
+
+Future<void> releaseMediaUrl(String url) async {}
+
+VideoPlayerController videoController(String url) =>
+    throw UnsupportedError('当前平台不支持短片媒体播放');
+
+Source audioSource(String url) =>
+    throw UnsupportedError('当前平台不支持短片媒体播放');
+
+Future<void> downloadBytes(Uint8List bytes, String filename) async {
+  throw UnsupportedError('当前平台不支持下载');
+}
+
+Future<void> setVideosMuted(bool muted) async {
+  // 兜底平台：无可操作的 video 元素。
+}

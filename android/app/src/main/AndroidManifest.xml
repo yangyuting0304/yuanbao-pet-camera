@@ -1,0 +1,58 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 相机权限（切片2：真实拍照；安卓真机运行时授权） -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- 麦克风权限：宠物模式以 enableAudio=true 录制。Android 对「未在清单声明的
+         运行时权限」是静默拒绝——不弹窗、不报错，请求直接返回失败，于是被
+         pages.dart 的降级链吞成 _audioUnsupported=true，表现为录像全程无声，
+         且会被误判为「设备不支持音频」。必须在此声明。 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- required=false：无麦克风的设备（如部分平板）仍可安装，仅录音降级为无声。 -->
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <!-- 网络权限：AI 写真/成片代理请求（Flutter 模板默认只在 debug/profile 清单里
+         带 INTERNET，release 包需手动声明，否则 AI 功能在正式包内全部断网） -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application
+        android:label="元宝拍拍"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <!-- Specifies an Android theme to apply to this Activity as soon as
+                 the Android process has started. This theme is visible to the user
+                 while the Flutter UI initializes. After that, this theme continues
+                 to determine the Window background behind the Flutter UI. -->
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <!-- Don't delete the meta-data below.
+             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+    <!-- Required to query activities that can process text, see:
+         https://developer.android.com/training/package-visibility and
+         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
+
+         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+    </queries>
+</manifest>

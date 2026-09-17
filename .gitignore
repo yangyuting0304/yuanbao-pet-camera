@@ -1,0 +1,31 @@
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+
+# 构建产物
+build/
+*.log
+
+# 平台本机文件（含本机 SDK 路径，因人而异）
+android/.gradle/
+android/local.properties
+android/app/.cxx/
+android/*.iml
+
+# iOS 目录由 Mac 侧 flutter create 生成后再入库
+ios/
+
+# 临时脚手架（README_build.md 工具链生成物，不入库）
+_scaffold/
+
+# IDE
+.idea/
+.vscode/
+
+# 诊断产物
+_diag*.png
+
+# 云函数依赖（部署时 npm install）
+cloud_functions/node_modules/

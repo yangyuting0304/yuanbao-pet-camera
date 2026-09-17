@@ -1,0 +1,70 @@
+name: pet_camera
+description: 元宝爱拍照 - AI 宠物影像 App（v1 主演示端：Android）
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.0
+  flutter: ">=3.44.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # 状态管理（Spec 锁定 Riverpod 3.x）
+  flutter_riverpod: ^3.2.1
+  # 短片剪辑：视频预览/播放（Web 用 HTML5 video）
+  video_player: ^2.8.0
+  # 短片剪辑：选取本地视频/音频文件（Web 返回字节流）
+  file_picker: ^8.0.0
+  # 短片剪辑：配乐播放（与原声叠加）
+  audioplayers: ^5.2.0
+  # SVG 图标渲染：用于接入 MingCute 图标资源
+  flutter_svg: ^2.2.0
+  # 旧页面暂时还在使用 Lucide，先保留依赖避免二级页报错。
+  lucide_flutter: ^1.25.0
+  # 相机插件（切片2：真实取景框 + 快门拍照；Web/Android 双端支持）
+  camera: ^0.11.1
+  # 端侧物种识别（LiteRT/TFLite，MobileNetV2 量化 ImageNet 分类）。
+  # 仅 Android/iOS 可用；Web 构建靠条件导入隔离（default_species_detector_*.dart）。
+  tflite_flutter: ^0.11.0
+  # 切片D 宠物滤镜：JPEG 编解码 + 像素级后处理。
+  # dart:ui 只能编码 PNG（12MP 会到几十 MB，无法上传），必须靠它出 JPEG。
+  image: ^4.3.0
+  # HTTP 客户端（切片3：AI 写真云端 API 调用）
+  http: ^1.2.0
+  # 远程图片加载与缓存（种子图外置 COS 后统一走 AppImage 组件）
+  cached_network_image: ^3.4.1
+  hive_flutter: ^1.1.0
+  # 拍摄照片本地持久化（原生端应用文档目录；Web 端条件导入为空实现）。
+  path_provider: ^2.1.5
+  # 全站备案号 Footer：点击跳转工信部备案管理系统
+  url_launcher: ^6.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    # 种子照片已外置到对象存储（按 SeedConfig 拼 URL），不再打包进安装包。
+    # 仅保留示例短片（0.82 MB）随包分发，播放更稳。
+    - assets/seed/photos/feat_video_compressed.mp4
+    - assets/seed/seed_manifest.json
+    # 品牌 Logo 资源。
+    - assets/brand/logo.svg
+    # 宠物引诱音效（占位素材，由 tools/gen_lure_sounds.py 合成；
+    # 拿到实拍录音后同名覆盖即可，App 无需改代码）。
+    - assets/sounds/
+    # 首页与主导航统一使用 MingCute SVG 图标资源
+    - assets/icons/mingcute/
+    # 端侧物种识别模型（MobileNetV2 量化版 3.4MB）与 ImageNet 标签表。
+    # 来源：google-coral/test_data 与 tensorflow/tensorflow 官方仓库。
+    - assets/models/
+    # 品牌字体：这里只当普通资源打包，不在 flutter.fonts 里声明。
+    # 声明在 fonts 下时，Flutter Web 会等字体下载完才渲染首帧（3.5 MB 曾拖到
+    # 28 秒）；改为运行时 FontLoader 注册后首屏不再被字体阻塞，
+    # 见 lib/data/app_font.dart。母版与生成脚本见 tools/font-subset。
+    - assets/fonts/NotoSansSC-400.ttf
+    - assets/fonts/NotoSansSC-700.ttf
