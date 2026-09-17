@@ -29,7 +29,6 @@ import 'package:pet_camera/data/ai_portrait_service.dart';
 import 'package:pet_camera/data/burst_selector.dart';
 import 'package:pet_camera/data/camera_capability.dart';
 import 'package:pet_camera/data/captured_photos.dart';
-import 'package:pet_camera/data/cloud_species_detector.dart';
 import 'package:pet_camera/data/default_species_detector.dart';
 import 'package:pet_camera/data/lure_sound_player.dart';
 import 'package:pet_camera/data/pet_auto_profiler.dart';
@@ -1360,6 +1359,18 @@ class CameraPage extends ConsumerStatefulWidget {
 /// Web 端使用 camera_web（getUserMedia，需 localhost/https 授权）；Android 端原生相机。
 class _CameraPageState extends ConsumerState<CameraPage> {
   static const Duration _cameraInitTimeout = Duration(seconds: 10);
+
+  /// 释放旧控制器后的等待时间。Camerax 释放底层相机会话是异步的，
+  /// 不等这一下，紧接着的初始化会抢不到相机（切模式黑屏的成因之一）。
+  static const Duration _cameraReleaseDelay = Duration(milliseconds: 250);
+
+  /// 自动识别的抓帧超时。takePicture 在个别机型上会长时间不返回，
+  /// 没有超时会让「识别中」永久卡住，用户连手动重试都点不动。
+  static const Duration _autoDetectTimeout = Duration(seconds: 10);
+
+  /// 切到宠物模式后延迟多久再抓帧：等新控制器的预览首帧稳定。
+  /// 刚重建完就 takePicture 会和相机会话抢资源，在 Android 上可能把预览卡死。
+  static const Duration _autoDetectDelay = Duration(milliseconds: 800);
   // UI 按常见相机文案展示 4:3 / 16:9，内部仍按竖屏预览比例计算。
   static const List<String> _photoRatioLabels = ['原图', '1:1', '4:3', '16:9'];
   static const List<double?> _photoRatioValues = [null, 1.0, 3 / 4, 9 / 16];
@@ -1481,8 +1492,28 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     bool enableAudio = false,
   }) async {
     final previousController = _controller;
+    // 关键顺序：先彻底释放旧控制器，再创建新的。
+    //
+    // Android（Camerax）同一时刻只允许一个相机会话，旧控制器还活着时
+    // 新控制器 initialize 必然失败——降级链逐档试遍也全失败，
+    // 表现为「切到宠物 / 视频模式后取景框一片黑」。
+    // 旧实现是「新的初始化成功后才 dispose 旧的」，在原生端必然踩这个坑。
+    _controller = null;
     _recording = false;
     _audioUnsupported = false;
+    if (mounted) {
+      setState(() {
+        _isInitialized = false;
+        _error = null;
+      });
+    }
+    if (previousController != null) {
+      try {
+        await previousController.dispose();
+      } catch (_) {}
+      // Camerax 释放底层会话是异步的，紧接着就初始化仍会抢不到相机。
+      await Future<void>.delayed(_cameraReleaseDelay);
+    }
 
     // 切片A：按降级链逐档尝试。高分辨率初始化失败时自动退到下一档，
     // 而不是一次失败就让整个相机不可用（原实现直接抛「相机启动失败」）。
@@ -1495,7 +1526,6 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         _controller = c;
         _activePreset = preset;
         if (enableAudio && !audio) _audioUnsupported = true;
-        previousController?.dispose();
         if (mounted) setState(() => _isInitialized = true);
         // 切片B：控制器就绪后立即套用当前宠物参数。
         await _applyPetProfile();
@@ -1632,7 +1662,7 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     if (c == null || !_isInitialized || _autoDetecting || _recording) return;
     if (mounted) setState(() => _autoDetecting = true);
     try {
-      final shot = await c.takePicture();
+      final shot = await c.takePicture().timeout(_autoDetectTimeout);
       final bytes = await shot.readAsBytes();
 
       // 毛色分析放 isolate（网页端 compute 会退化为同步执行）。
@@ -2108,7 +2138,11 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     // 而不是"打开相机先选四个维度"。整个会话只自动跑一次，
     // 之后由用户点按钮手动重跑。
     if (i == 2 && !_autoDetectedThisSession) {
-      unawaited(_autoDetectPet());
+      unawaited(
+        Future<void>.delayed(_autoDetectDelay).then((_) {
+          if (mounted) _autoDetectPet();
+        }),
+      );
     }
   }
 
