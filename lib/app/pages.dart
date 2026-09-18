@@ -22,20 +22,27 @@ import 'package:pet_camera/app/app_back_button.dart';
 import 'package:pet_camera/app/app_loading_view.dart';
 import 'package:pet_camera/app/app_top_nav_bar.dart';
 import 'package:pet_camera/app/beian_footer.dart';
+import 'package:pet_camera/app/live_player.dart';
 import 'package:pet_camera/app/media_platform.dart';
 import 'package:pet_camera/app/mingcute_icons.dart';
 import 'package:pet_camera/app/tokens.dart';
 import 'package:pet_camera/data/ai_portrait_service.dart';
 import 'package:pet_camera/data/burst_selector.dart';
 import 'package:pet_camera/data/camera_capability.dart';
+import 'package:pet_camera/data/camera_frame.dart';
 import 'package:pet_camera/data/captured_photos.dart';
 import 'package:pet_camera/data/default_species_detector.dart';
+import 'package:pet_camera/data/frame_fusion.dart';
+import 'package:pet_camera/data/live_photo.dart';
 import 'package:pet_camera/data/lure_sound_player.dart';
 import 'package:pet_camera/data/pet_auto_profiler.dart';
 import 'package:pet_camera/data/pet_capture_profile.dart';
+import 'package:pet_camera/data/pet_detector.dart';
 import 'package:pet_camera/data/pet_eye_detector.dart';
 import 'package:pet_camera/data/pet_filter.dart';
 import 'package:pet_camera/data/pet_species_detector.dart';
+import 'package:pet_camera/data/photo_saver.dart';
+import 'package:pet_camera/data/photo_storage.dart';
 import 'package:pet_camera/data/short_videos.dart';
 import 'package:pet_camera/data/app_settings.dart';
 import 'package:pet_camera/data/models.dart';
@@ -1371,6 +1378,10 @@ class _CameraPageState extends ConsumerState<CameraPage> {
   /// 切到宠物模式后延迟多久再抓帧：等新控制器的预览首帧稳定。
   /// 刚重建完就 takePicture 会和相机会话抢资源，在 Android 上可能把预览卡死。
   static const Duration _autoDetectDelay = Duration(milliseconds: 800);
+
+  /// 多帧融合的输出长边上限。
+  /// 与滤镜同一档（都要在 isolate 里逐像素跑），3000 是画质与内存的折中。
+  static const int _fusionMaxSide = 3000;
   // UI 按常见相机文案展示 4:3 / 16:9，内部仍按竖屏预览比例计算。
   static const List<String> _photoRatioLabels = ['原图', '1:1', '4:3', '16:9'];
   static const List<double?> _photoRatioValues = [null, 1.0, 3 / 4, 9 / 16];
@@ -1389,6 +1400,11 @@ class _CameraPageState extends ConsumerState<CameraPage> {
   Uint8List? _lastBytes;
   bool _recording = false; // 视频录制进行中
   bool _audioUnsupported = false; // 本设备/浏览器不支持录制音频，已降级无声
+
+  /// 动态照片（Live Photo）短片录制中。同一时刻只允许一路录制。
+  bool _liveRecording = false;
+  /// 已请求提前收尾：用户按下快门要抢相机，录制循环见到此标志立刻结束。
+  bool _liveAbort = false;
 
   // ───────────── 切片A：画质地基 ─────────────
   /// 拍摄画质档位（原生走 max，网页自动降一档）。
@@ -1454,7 +1470,12 @@ class _CameraPageState extends ConsumerState<CameraPage> {
 
   // ───────────── 切片G：连拍 ─────────────
   /// 每次拍照的张数档位。
-  BurstCount _burstShots = BurstCount.single;
+  ///
+  /// 默认 **5 连拍**——这是多帧融合的前提：少于此，画质增强的核心手段
+  /// 直接失效（单张时融合会自动跳过，退回普通拍照）。
+  /// 降噪收益按 √N 增长：3 帧 42%、5 帧 55%。苹果 Deep Fusion 用 9 帧，
+  /// 我们在"拍照等待时间"与"画质"之间取 5 帧。
+  BurstCount _burstShots = BurstCount.five;
   /// 最近一次连拍挑中的帧，用于给用户一句明确反馈。
   ({int index, int total})? _lastBurstPick;
 
@@ -1464,6 +1485,32 @@ class _CameraPageState extends ConsumerState<CameraPage> {
   final PetEyeDetector _eyeDetector = const NoPetEyeDetector();
   /// 最近一次定位到的双眼位置（每帧/每次抓帧更新）。
   PetEyeResult? _lastEyeResult;
+
+  // ───────────── 实时宠物跟踪（自动捕捉） ─────────────
+  /// 每 N 帧做一次推理。30fps 的流按 6 抽 1 ≈ 每秒 5 次，
+  /// 足够跟上宠物移动，又把主 isolate 占用压到可感知阈值以下。
+  static const int _detectFrameStride = 6;
+
+  /// 自动对焦的重设节流：宠物移动超过该比例（或超过间隔）才重新对焦。
+  /// 不加节流会让对焦马达每秒抽动好几次，取景画面持续"呼吸"。
+  static const Duration _trackFocusInterval = Duration(milliseconds: 1500);
+  static const double _trackFocusMoveThreshold = 0.12;
+
+  /// 最近一次检测到的宠物框（按置信度降序）；空 = 画面里没找到宠物。
+  List<PetDetection> _detections = const [];
+
+  /// 推理进行中标记：帧流回调很密集，必须防重入（否则会排起长队）。
+  bool _detecting = false;
+
+  /// 帧计数器，用于抽帧推理。
+  int _frameTick = 0;
+
+  /// 图像流是否已开启。
+  bool _streaming = false;
+
+  /// 最近一次跟踪对焦的目标与时间（节流用）。
+  Offset? _lastTrackedFocus;
+  DateTime? _lastTrackedFocusAt;
 
   @override
   void initState() {
@@ -1578,7 +1625,7 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     );
 
     // 曝光：毛色自适应。白毛加、黑毛减——这是"比系统相机好"的核心一招。
-    // 测光/对焦点按「宠物眼睛 → 用户点选 → 画面中心」的优先级决定。
+    // 测光点按「宠物眼睛 → 用户点选 → 画面中心」的优先级决定。
     final focusPoint = _resolveFocusPoint();
     await _capability.probeExposureRange(c);
     await _capability.applyExposure(
@@ -1587,8 +1634,14 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       ev: p.exposureCompensation + _userEvOffset,
     );
 
-    // 对焦：切片F接入宠物关键点模型后，这里会改成锁"离镜头最近的眼睛"。
-    await _capability.applyFocus(c, point: focusPoint);
+    // 对焦：**只保持自动对焦模式，不锁点**（除非用户手动点选过）。
+    //
+    // 旧实现无条件 setFocusPoint(_resolveFocusPoint())，等于每次都把对焦区
+    // 锁在画面中心；而宠物抓拍十有八九不在正中（猫在画面左侧就是典型），
+    // 结果主体虚焦、背景清晰——用户反馈的"拍出来模糊"多半来自这里。
+    // 传 null 时 applyFocus 只 setFocusMode(auto)，让相机自己对整个场景 AF；
+    // 用户点屏指定过对焦点时才锁到那个点（切片F接入眼睛模型后改为锁眼睛）。
+    await _capability.applyFocus(c, point: _focusNormalized);
 
     if (mounted) setState(() {});
   }
@@ -1661,6 +1714,8 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     final c = _controller;
     if (c == null || !_isInitialized || _autoDetecting || _recording) return;
     if (mounted) setState(() => _autoDetecting = true);
+    // 抓帧要独占相机会话：图像流与拍照在 Android 上会互相抢占。
+    final paused = await _pauseTracking();
     try {
       final shot = await c.takePicture().timeout(_autoDetectTimeout);
       final bytes = await shot.readAsBytes();
@@ -1714,6 +1769,7 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       }
     } finally {
       if (mounted) setState(() => _autoDetecting = false);
+      await _resumeTracking(paused);
     }
   }
 
@@ -1726,7 +1782,12 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     if (mounted) setState(() {});
     await _setupController(
       _cameras[_cameraIndex],
-      enableAudio: _modeIndex == 1,
+      // 动态照片需要 VideoCapture 用例，而用例只能在 initialize 时确定、
+      // 无法事后追加，所以拍照/视频模式**恒开音频轨**（不录制时无额外开销），
+      // 换来"随时打开动态照片都能立刻用、不必重建控制器"。
+      // 宠物模式（2）保持关闭：CameraX 下 VideoCapture 与 ImageAnalysis
+      // （实时跟踪用的图像流）互斥，只能取其一——宠物模式保跟踪。
+      enableAudio: _modeIndex != 2,
     );
   }
 
@@ -1865,30 +1926,206 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     return _focusNormalized ?? const Offset(0.5, 0.5);
   }
 
+  // ───────────── 实时宠物跟踪：帧流 → 检测 → 对焦 ─────────────
+
+  /// 按当前模式同步图像流的开关（只有宠物模式 + 原生端才开启）。
+  ///
+  /// 图像流与预览/拍照在 Android 上会争抢相机会话，因此：
+  ///   - 仅在宠物模式下开启（其他模式零开销）
+  ///   - 拍照前必须停流，拍完再恢复（否则 takePicture 可能失败）
+  ///   - 任何失败都退回"不跟踪"，绝不让跟踪拖垮取景
+  Future<void> _syncTracking() async {
+    final wantTracking = _modeIndex == 2 && PetDetector.isAvailable;
+    if (wantTracking == _streaming) return;
+    final c = _controller;
+    if (c == null || !_isInitialized) return;
+    try {
+      if (wantTracking) {
+        await c.startImageStream(_onCameraFrame);
+        _streaming = true;
+      } else {
+        await c.stopImageStream();
+        _streaming = false;
+        if (mounted) setState(() => _detections = const []);
+      }
+    } catch (e) {
+      debugPrint('[宠物跟踪] 图像流切换失败，本次会话不跟踪：$e');
+      _streaming = false;
+    }
+  }
+
+  /// 临时让出图像流：拍照 / 抓帧需要独占相机会话
+  /// （Android 上图像流与 takePicture 会互相抢占，不停流拍照可能直接失败）。
+  /// 返回原本是否在流中，供 [_resumeTracking] 恢复。
+  Future<bool> _pauseTracking() async {
+    if (!_streaming) return false;
+    try {
+      await _controller?.stopImageStream();
+    } catch (_) {}
+    _streaming = false;
+    return true;
+  }
+
+  /// 恢复此前让出的图像流。
+  Future<void> _resumeTracking(bool wasStreaming) async {
+    if (!wasStreaming || !mounted) return;
+    await _syncTracking();
+  }
+
+  /// 帧流回调（在平台的图像线程上触发，回到 Dart 后要尽快返回）。
+  void _onCameraFrame(CameraImage image) {
+    _frameTick++;
+    if (_frameTick % _detectFrameStride != 0) return;
+    if (_detecting || !mounted) return; // 上一帧还没算完就直接丢弃，不排队
+    _detecting = true;
+    unawaited(_runFrameDetection(image));
+  }
+
+  Future<void> _runFrameDetection(CameraImage image) async {
+    try {
+      final rgb = cameraFrameToRgb(
+        width: image.width,
+        height: image.height,
+        planes: image.planes.map((p) => p.bytes).toList(growable: false),
+        bytesPerRow: image.planes
+            .map((p) => p.bytesPerRow)
+            .toList(growable: false),
+        bytesPerPixel: image.planes
+            .map((p) => p.bytesPerPixel ?? 1)
+            .toList(growable: false),
+        format: _frameFormatOf(image.format.group),
+      );
+      if (rgb == null) return;
+      final found = await PetDetector.detect(rgb);
+      if (!mounted) return;
+      setState(() => _detections = found);
+      await _trackFocusToPet(found);
+    } catch (e) {
+      debugPrint('[宠物跟踪] 帧处理失败：$e');
+    } finally {
+      _detecting = false;
+    }
+  }
+
+  FrameFormat _frameFormatOf(ImageFormatGroup group) {
+    switch (group) {
+      case ImageFormatGroup.yuv420:
+        return FrameFormat.yuv420;
+      case ImageFormatGroup.bgra8888:
+        return FrameFormat.bgra8888;
+      default:
+        return FrameFormat.unknown;
+    }
+  }
+
+  /// 把对焦点跟到宠物身上。
+  ///
+  /// 三条抑制规则，缺一个体验就崩：
+  ///   1. 用户手动点选过对焦点 → 尊重用户，不再自动抢；
+  ///   2. 宠物位置没怎么动且距上次对焦不久 → 跳过（否则对焦马达持续抽动）；
+  ///   3. 没检测到宠物 → 什么也不做，保持上一次对焦。
+  Future<void> _trackFocusToPet(List<PetDetection> found) async {
+    final c = _controller;
+    if (c == null || !_isInitialized || found.isEmpty) return;
+    if (_focusNormalized != null) return;
+
+    final pet = found.first;
+    final target = _framePointToPreview(pet.centerX, pet.centerY);
+    final last = _lastTrackedFocus;
+    final lastAt = _lastTrackedFocusAt;
+    final now = DateTime.now();
+    if (last != null &&
+        lastAt != null &&
+        (target - last).distance < _trackFocusMoveThreshold &&
+        now.difference(lastAt) < _trackFocusInterval) {
+      return;
+    }
+    _lastTrackedFocus = target;
+    _lastTrackedFocusAt = now;
+    await _capability.applyFocus(c, point: target);
+  }
+
+  /// 帧坐标 → 预览坐标（归一化）。
+  ///
+  /// Android 的相机帧是**横向**的（sensor 原始输出），而预览在竖屏手机上
+  /// 旋转 90° 显示；`setFocusPoint` 要的是**预览坐标系**，所以必须转一次。
+  /// 后置摄像头按顺时针 90° 处理。**若真机上发现对焦点落在镜像位置，
+  /// 只改这一行即可**——这是唯一需要按机型校准的地方。
+  Offset _framePointToPreview(double fx, double fy) =>
+      Offset((1.0 - fy).clamp(0.0, 1.0), fx.clamp(0.0, 1.0));
+
+  /// 检测框 → 取景区内的屏幕矩形（含上面那次旋转）。
+  Rect _detectionRect(PetDetection d, Size viewport) {
+    final p1 = _framePointToPreview(d.left, d.top);
+    final p2 = _framePointToPreview(d.right, d.bottom);
+    final left = math.min(p1.dx, p2.dx);
+    final right = math.max(p1.dx, p2.dx);
+    final top = math.min(p1.dy, p2.dy);
+    final bottom = math.max(p1.dy, p2.dy);
+    return Rect.fromLTRB(
+      left * viewport.width,
+      top * viewport.height,
+      right * viewport.width,
+      bottom * viewport.height,
+    );
+  }
+
   /// 切片G：按当前档位连拍，并返回最清晰的一张。
   ///
   /// 单张时直接返回、不做评分。多张时把解码与打分放到 isolate 上
   /// （网页端 `compute` 会退化为同步执行）。任何失败都退回最后一张——
   /// 选帧不成功也绝不能让用户按了快门却没有照片。
-  Future<Uint8List> _captureBurst() async {
+  /// 连拍，返回**全部帧**（交给 [_fuseFrames] 做多帧融合）。
+  Future<List<Uint8List>> _captureBurst() async {
     final count = _burstShots.count;
     final shots = <Uint8List>[];
     for (var i = 0; i < count; i++) {
       final shot = await _controller!.takePicture();
       shots.add(await shot.readAsBytes());
     }
-    _lastBurstPick = null;
-    if (shots.length == 1) return shots.first;
+    return shots;
+  }
+
+  /// 把连拍帧融合成一张成片。
+  ///
+  /// 两步配合，各司其职：
+  ///   1. **选帧**——挑出最清晰的一帧当参考帧（保证清晰度不被融合拖累）；
+  ///   2. **融合**——其余帧对齐到它做抗离群平均，把随机噪声压掉约 40%。
+  ///
+  /// 这是"画质优于原生相机"的核心手段：单帧后处理只能靠"模糊换降噪"，
+  /// 而多帧融合是**降噪但完全不动细节**。
+  Future<Uint8List> _fuseFrames(List<Uint8List> frames) async {
+    if (frames.isEmpty) {
+      throw StateError('没有拍到画面，请重试');
+    }
+    if (frames.length == 1) {
+      _lastBurstPick = null;
+      return frames.first;
+    }
+
+    var ordered = frames;
     try {
-      final result = await compute(runBurstSelection, (
-        shots: shots,
+      final pick = await compute(runBurstSelection, (
+        shots: frames,
         sampleTarget: 320,
       ));
-      _lastBurstPick = (index: result.index, total: shots.length);
-      return result.bytes;
+      _lastBurstPick = (index: pick.index, total: frames.length);
+      final best = frames[pick.index];
+      ordered = [best, ...frames.where((f) => !identical(f, best))];
     } catch (e) {
-      debugPrint('[连拍] 选帧失败，改用最后一张：$e');
-      return shots.last;
+      debugPrint('[连拍] 选帧失败，按原始顺序融合：$e');
+      _lastBurstPick = null;
+    }
+
+    try {
+      return await compute(fuseFrames, (
+        frames: ordered,
+        maxSide: kIsWeb ? 1800 : _fusionMaxSide,
+        jpegQuality: PetFilter.defaultJpegQuality,
+      ));
+    } catch (e) {
+      debugPrint('[融合] 失败，退回参考帧：$e');
+      return ordered.first;
     }
   }
 
@@ -1935,7 +2172,12 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     _resetFocusAndZoom();
     await _setupController(
       _cameras[_cameraIndex],
-      enableAudio: _modeIndex == 1,
+      // 动态照片需要 VideoCapture 用例，而用例只能在 initialize 时确定、
+      // 无法事后追加，所以拍照/视频模式**恒开音频轨**（不录制时无额外开销），
+      // 换来"随时打开动态照片都能立刻用、不必重建控制器"。
+      // 宠物模式（2）保持关闭：CameraX 下 VideoCapture 与 ImageAnalysis
+      // （实时跟踪用的图像流）互斥，只能取其一——宠物模式保跟踪。
+      enableAudio: _modeIndex != 2,
     );
   }
 
@@ -1945,28 +2187,133 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     });
   }
 
+  /// 切换动态照片开关。
+  ///
+  /// 宠物模式下拦截：CameraX 的 VideoCapture 与 ImageAnalysis（宠物实时
+  /// 追踪依赖的图像流）互斥，同时开启会导致相机会话初始化失败——即取景框
+  /// 全黑。与其让用户开一个"看起来能用、实际拍不出动态"的开关，不如直说。
+  void _toggleLivePhoto() {
+    if (_modeIndex == 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('宠物模式要实时追踪，与动态照片不能同时开启，请切到「拍照」模式'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    ref
+        .read(livePhotoEnabledProvider.notifier)
+        .setEnabled(!ref.read(livePhotoEnabledProvider));
+  }
+
   Future<void> _capture() async {
     if (_controller == null || !_isInitialized) return;
     if (_modeIndex == 1) {
       await _toggleRecording();
       return;
     }
+    // 动态短片正在录：先让它提前收尾，把相机让给拍照。
+    await _stopLiveClipEarly();
     await _takePicture();
+  }
+
+  /// 请求正在录制的动态短片提前收尾，并**等它真正停止**。
+  ///
+  /// 必须等：CameraX 同一时刻只接受一个采集请求，硬抢会让 takePicture
+  /// 直接失败——那意味着"照片丢了"，比没有动态照片严重得多。
+  /// 录制循环每 20ms 检查一次 [_liveAbort]，正常在 100ms 内收尾。
+  Future<void> _stopLiveClipEarly() async {
+    if (!_liveRecording) return;
+    _liveAbort = true;
+    for (var i = 0; i < 25 && _liveRecording; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+  }
+
+  /// 动态照片：拍照完成后自动录一小段短片，关联到刚拍的那张照片。
+  ///
+  /// 为什么录的是"之后"而不是苹果那样的"前后各 1.5 秒"：拍照走多帧融合，
+  /// 连拍期间独占相机会话，无法同时抓帧流。二者只能取其一，这里保画质。
+  ///
+  /// 全程静默降级：任何失败都只是"这张没有动态照片"，绝不影响已经拍到手的
+  /// 照片。Web 端 `PhotoStorage.saveLive` 返回 null，自然跳过。
+  Future<void> _captureLiveClip(CapturedPhoto photo) async {
+    // 上一段还在录 → 跳过这张（相机同一时刻只能录一路）。
+    if (_liveRecording || _recording || _liveAbort) return;
+    final c = _controller;
+    if (c == null || !_isInitialized) return;
+
+    setState(() => _liveRecording = true);
+    try {
+      await c.startVideoRecording();
+      // 分段等待而非一次睡满：用户中途按快门时能立刻收尾。
+      final deadline = DateTime.now().add(
+        const Duration(seconds: liveClipSeconds),
+      );
+      while (DateTime.now().isBefore(deadline) && !_liveAbort) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      // 用捕获的 c 停止，而不是重新读 _controller：等待期间用户可能切了
+      // 镜头/模式，_controller 已是另一个实例，去停它只会抛异常。
+      final file = await c.stopVideoRecording();
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty) return;
+      final path = await PhotoStorage.saveLive(
+        bytes,
+        takenAt: photo.takenAt,
+      );
+      if (path == null || !mounted) return;
+      ref.read(capturedPhotosProvider.notifier).attachLive(photo, path);
+    } catch (e) {
+      debugPrint('[动态照片] 录制失败，跳过：$e');
+      // 失败可能留下半个文件，清掉避免成为孤儿。
+      unawaited(PhotoStorage.deleteLive(photo.takenAt));
+    } finally {
+      _liveAbort = false;
+      if (mounted) setState(() => _liveRecording = false);
+    }
   }
 
   /// 拍照并在保存前按设置的比例生成最终成片。
   /// 比例外区域补纯黑，避免直接裁掉原图内容。
   Future<void> _takePicture() async {
     if (_controller == null || !_isInitialized) return;
+    // 拍照要独占相机会话：宠物模式下图像流正开着，必须先让出来。
+    final paused = await _pauseTracking();
     try {
-      // 切片G：先连拍（单张时就是普通拍照），自动挑出最清晰的那张。
-      final rawBytes = await _captureBurst();
+      // 切片G：先连拍（单张时就是普通拍照）。
+      final frames = await _captureBurst();
+      // 切片H：多帧融合 —— 选最清晰的一帧作参考，其余帧对齐后融合降噪。
+      final rawBytes = await _fuseFrames(frames);
       // 切片D：先套宠物滤镜（调色 + 美颜），再按所选比例加框。
       // 顺序很重要——先加框的话，黑边也会被卷进滤镜计算。
       final filtered = await _applyPetFilter(rawBytes);
       final bytes = await _composePhotoToSelectedRatio(filtered);
-      // 本地即时展示。
-      ref.read(capturedPhotosProvider.notifier).add(bytes);
+      // 本地即时展示。返回的时间戳用于关联稍后录完的动态短片。
+      final photo = ref.read(capturedPhotosProvider.notifier).add(bytes);
+      // 动态照片：照片已经进列表了，短片在后台补录、录完再关联回来。
+      // 这里**不能 await**——否则用户按完快门要干等 2 秒才能继续拍。
+      // 宠物模式不录（VideoCapture 与它的实时图像流互斥，见 _setupController）。
+      if (_modeIndex != 2 && ref.read(livePhotoEnabledProvider)) {
+        unawaited(_captureLiveClip(photo));
+      }
+      // 自动存进系统相册。
+      //
+      // 原生相机拍完照片就躺在系统相册里，而我们的成片原先只活在 App 内部，
+      // 用户想发朋友圈/给别人看还得回 App 手动导出——这违背了"相机"的直觉
+      // （实拍反馈"原始照片不能下载"就是这一条）。这里拍到就存。
+      // 失败不打扰用户：相册权限被拒时，照片仍在 App 相册与云端。
+      unawaited(() async {
+        final problem = await savePhotoToGallery(bytes);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(problem ?? '已保存到系统相册'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }());
       // 异步上传 COS 并登记 works.json（失败不阻断拍摄流程）。
       unawaited(() async {
         try {
@@ -2007,31 +2354,60 @@ class _CameraPageState extends ConsumerState<CameraPage> {
           context,
         ).showSnackBar(SnackBar(content: Text('拍照失败：$e')));
       }
+    } finally {
+      await _resumeTracking(paused);
     }
   }
 
   /// 按当前照片比例输出带黑边的成片。
   /// 这里保留原图完整内容，只在比例外补纯黑区域。
+  ///
+  /// 内存注意（「拍照后闪退」的两大来源）：
+  ///  1. 合成结果要转 rawRgba（4 字节/像素）才能编 JPEG，4000px 就是 48MB，
+  ///     跨 isolate 还要再拷一份 —— 因此输出长边封顶到与滤镜同一档。
+  ///  2. `ui.Image` / `ui.Picture` / `ui.Codec` 占的是**引擎侧内存**，
+  ///     Dart GC 的 finalizer 回收很慢；不显式 dispose，连拍几张就会把
+  ///     进程内存顶爆被系统杀掉。旧实现在这三处全都泄漏。
   Future<Uint8List> _composePhotoToSelectedRatio(Uint8List bytes) async {
     final targetRatio = _photoRatioValues[_photoRatioIndex];
-    try {
-      final codec = await ui.instantiateImageCodec(bytes);
-      final frame = await codec.getNextFrame();
-      final image = frame.image;
-      final sourceWidth = image.width.toDouble();
-      final sourceHeight = image.height.toDouble();
-      if (targetRatio == null) return bytes;
+    // 原图比例无需补边，连解码都省掉。
+    if (targetRatio == null) return bytes;
 
-      // 按用户要求：目标宽高由原图宽或高的最大值来定。
-      final maxSide = math.max(sourceWidth, sourceHeight);
+    ui.Codec? codec;
+    ui.Image? source;
+    ui.Picture? picture;
+    ui.Image? composed;
+    try {
+      codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      final sourceImage = frame.image;
+      source = sourceImage;
+      final sourceWidth = sourceImage.width.toDouble();
+      final sourceHeight = sourceImage.height.toDouble();
+
+      // UI 里的比例值是「竖屏视角」（`3/4` 表示 3:4、`9/16` 表示 9:16），
+      // 而相机传感器出图是**横向**的（如 4000×3000）。
+      //
+      // 直接套用会把横图塞进竖框：源图缩到 2250×1687 后两侧补满黑边，
+      // 用户看到的就是"拍出来变窄了"。这里按源图方向换算一次——
+      // 横图取倒数，让「4:3」真的输出 4:3 横图、满幅无黑边。
+      final effectiveRatio = sourceWidth >= sourceHeight
+          ? 1 / targetRatio
+          : targetRatio;
+
+      // 目标宽高由原图长边决定，但不超过封顶值（内存保护）。
+      final maxSide = math.min(
+        math.max(sourceWidth, sourceHeight),
+        PetFilter.defaultMaxSide.toDouble(),
+      );
       late final int outputWidth;
       late final int outputHeight;
-      if (targetRatio >= 1) {
+      if (effectiveRatio >= 1) {
         outputWidth = maxSide.round();
-        outputHeight = (maxSide / targetRatio).round();
+        outputHeight = (maxSide / effectiveRatio).round();
       } else {
         outputHeight = maxSide.round();
-        outputWidth = (maxSide * targetRatio).round();
+        outputWidth = (maxSide * effectiveRatio).round();
       }
 
       // 使用 contain 方式完整放下原图，剩余区域用纯黑补齐。
@@ -2051,14 +2427,14 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         Paint()..color = const Color(0xFF000000),
       );
       canvas.drawImageRect(
-        image,
+        sourceImage,
         Rect.fromLTWH(0, 0, sourceWidth, sourceHeight),
         Rect.fromLTWH(offsetX, offsetY, drawWidth, drawHeight),
         Paint(),
       );
-      final picture = recorder.endRecording();
-      final outputImage = await picture.toImage(outputWidth, outputHeight);
-      final byteData = await outputImage.toByteData(
+      picture = recorder.endRecording();
+      composed = await picture.toImage(outputWidth, outputHeight);
+      final byteData = await composed.toByteData(
         format: ui.ImageByteFormat.rawRgba,
       );
       final rgba = byteData?.buffer.asUint8List();
@@ -2069,8 +2445,14 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         encodeJpegFromRgba,
         (rgba, outputWidth, outputHeight),
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[比例合成] 失败，改用原图：$e');
       return bytes;
+    } finally {
+      composed?.dispose();
+      picture?.dispose();
+      source?.dispose();
+      codec?.dispose();
     }
   }
 
@@ -2137,6 +2519,8 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     // 进入宠物模式时自动识别一次——这才叫"打开相机就能拍"，
     // 而不是"打开相机先选四个维度"。整个会话只自动跑一次，
     // 之后由用户点按钮手动重跑。
+    // 实时跟踪只在宠物模式开启（其他模式零开销）。
+    await _syncTracking();
     if (i == 2 && !_autoDetectedThisSession) {
       unawaited(
         Future<void>.delayed(_autoDetectDelay).then((_) {
@@ -2415,6 +2799,13 @@ class _CameraPageState extends ConsumerState<CameraPage> {
 
   @override
   void dispose() {
+    // 先停图像流再释放控制器：某些机型上直接 dispose 会让帧回调留在原地跑，
+    // 而回调里还会去碰已释放的会话。
+    final c = _controller;
+    if (_streaming && c != null) {
+      _streaming = false;
+      unawaited(c.stopImageStream().catchError((_) {}));
+    }
     _lurePlayer.dispose();
     _controller?.dispose();
     super.dispose();
@@ -2513,7 +2904,17 @@ class _CameraPageState extends ConsumerState<CameraPage> {
                       size: AppUi.iconLarge,
                     ),
                   ),
-                  const SizedBox(width: 20),
+                  const SizedBox(width: 14),
+                  // 动态照片开关（对齐 iOS 相机顶部的实况照片同心圆按钮：
+                  // 亮起=开、空心=关）。宠物模式下置灰，原因见 _toggleLivePhoto。
+                  _LiveToggleButton(
+                    supported: _modeIndex != 2,
+                    enabled:
+                        _modeIndex != 2 &&
+                        ref.watch(livePhotoEnabledProvider),
+                    onTap: _toggleLivePhoto,
+                  ),
+                  const SizedBox(width: 14),
                   GestureDetector(
                     // 参考线直接放到外层，点击即可开关。
                     onTap: () =>
@@ -2781,14 +3182,17 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         final displayHeight = isViewportPortrait == isPreviewPortrait
             ? previewSize.height
             : previewSize.width;
-        // 这里改成按视口比例做 cover 缩放，直接把多余区域裁掉，
-        // 避免某些浏览器里 FittedBox 没有真正把 CameraPreview 铺满而露出黑边。
-        final viewportAspect = constraints.maxWidth / constraints.maxHeight;
-        final previewAspect = displayWidth / displayHeight;
-        var scale = previewAspect / viewportAspect;
-        if (scale < 1) {
-          scale = 1 / scale;
-        }
+        // cover 铺满视口：**用尺寸比，不是宽高比之比**。
+        //
+        // 早先写的是 previewAspect / viewportAspect（0.5625 / 0.5 = 1.125），
+        // 但那只是"两个比例相除"，与"把 1080px 宽的预览塞进 400px 视口"
+        // 真正需要的 0.417 差了近 3 倍——预览因此被整体放大 2.7 倍：
+        // 视野只剩中间一小块、画面发糊。用户反馈的"视野比系统相机窄、
+        // 看着失真"正是这个。正确做法是取宽/高两个方向缩放比的较大者。
+        final scale = math.max(
+          constraints.maxWidth / displayWidth,
+          constraints.maxHeight / displayHeight,
+        );
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           // 切片C：点按 = 对焦 + 测光；双指 = 缩放。
@@ -2825,6 +3229,7 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         final viewport = Size(constraints.maxWidth, constraints.maxHeight);
         final frame = _resolveGuideFrame(viewport);
         final hasRatioMask = _photoRatioValues[_photoRatioIndex] != null;
+        final t = context.tokens;
         return IgnorePointer(
           child: Stack(
             children: [
@@ -2841,7 +3246,48 @@ class _CameraPageState extends ConsumerState<CameraPage> {
                     painter: _CameraGridPainter(frameRect: frame),
                   ),
                 ),
-              if (_modeIndex == 2 && _showPetGuide)
+              // 跟踪到宠物 → 画跟随框（带识别标签）；没跟踪到 → 回落到静态引导框。
+              if (_modeIndex == 2)
+                for (final d in _detections.take(1))
+                  Positioned.fromRect(
+                    rect: _detectionRect(d, viewport),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Positioned.fill(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              border: Border.all(color: t.brand, width: 2),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          left: 0,
+                          top: -22,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: t.brand,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '${d.label} ${(d.confidence * 100).round()}%',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF2B2622),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              if (_modeIndex == 2 && _showPetGuide && _detections.isEmpty)
                 Positioned.fromRect(
                   rect: frame,
                   child: Center(
@@ -2907,6 +3353,60 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       padding.top + ((availableHeight - frameHeight) / 2),
       frameWidth,
       frameHeight,
+    );
+  }
+}
+
+/// 动态照片开关按钮（对齐 iOS 相机顶部的实况照片同心圆）。
+///
+/// 自绘而非用图标：MingCute 里没有同心圆，自绘能精确还原"外圈 + 内实心点"
+/// 这个用户已经被苹果教育过的视觉。关闭时内圈收缩为零（空心圆）。
+class _LiveToggleButton extends StatelessWidget {
+  const _LiveToggleButton({
+    required this.supported,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  /// 当前模式是否支持动态照片。不支持时置灰但仍可点击（点了给原因）。
+  final bool supported;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    final color = !supported
+        ? Colors.white.withValues(alpha: 0.35)
+        : (enabled ? t.brand : Colors.white);
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: AppUi.iconLarge,
+        height: AppUi.iconLarge,
+        child: Center(
+          child: Container(
+            width: 20,
+            height: 20,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: color, width: 1.6),
+            ),
+            child: Center(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: enabled ? 10 : 0,
+                height: enabled ? 10 : 0,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: color,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -4437,18 +4937,20 @@ class AlbumPage extends ConsumerWidget {
         works.where((w) => w.type == LibraryType.capturedPhoto).toList();
     // 编辑图 / AI 生成图 / 视频 归入「我的创作」。
     final createdItems = works.where((w) => w.isCreatedGroup).toList();
+    // 用户删掉的云端照片（本地屏蔽），合并时过滤掉。
+    final hiddenUrls = ref.watch(hiddenPhotoUrlsProvider);
     final mergedItemsAsync = photosAsync.when(
       loading: () => const AppLoadingView(),
       error: (e, _) => Center(child: Text('加载失败：$e')),
       data: (photos) => petsAsync.when(
         loading: () => const AppLoadingView(),
         error: (_, __) => _AlbumView(
-          items: _mergePhotos(photos, captured, cloudPhotos),
+          items: _mergePhotos(photos, captured, cloudPhotos, hiddenUrls),
           pets: [],
           createdWorks: createdItems,
         ),
         data: (pets) => _AlbumView(
-          items: _mergePhotos(photos, captured, cloudPhotos),
+          items: _mergePhotos(photos, captured, cloudPhotos, hiddenUrls),
           pets: pets,
           createdWorks: createdItems,
         ),
@@ -4547,12 +5049,27 @@ class _AlbumItem {
     required this.caption,
     required this.takenAt,
     this.petId = '',
+    this.deletable = false,
+    this.cloudUrl,
+    this.livePath,
   });
   final SourcePhoto source;
   final ImageProvider image;
   final String caption;
   final DateTime takenAt;
   final String petId; // 所属宠物ID，用于"按宠物"分组
+
+  /// 动态照片短片的本地文件路径（原生端拍摄且开启动态照片时才有）。
+  final String? livePath;
+
+  bool get hasLive => livePath != null;
+
+  /// 是否允许用户删除。种子图（内置内容）不可删，用户拍摄的照片可删。
+  final bool deletable;
+
+  /// 云端照片的 URL（COS）。删除时记入本地屏蔽表，而不是走服务端删除。
+  final String? cloudUrl;
+
   String get monthKey => '${takenAt.year}年${takenAt.month}月';
 }
 
@@ -4562,6 +5079,7 @@ List<_AlbumItem> _mergePhotos(
   List<Photo> seed,
   List<CapturedPhoto> captured, [
   List<LibraryItem> cloudPhotos = const <LibraryItem>[],
+  Set<String> hiddenUrls = const <String>{},
 ]) =>
     <_AlbumItem>[
       for (final c in captured)
@@ -4570,16 +5088,24 @@ List<_AlbumItem> _mergePhotos(
           image: MemoryImage(c.bytes),
           caption: _fmtDateTime(c.takenAt),
           takenAt: c.takenAt,
+          deletable: true,
+          // 动态照片的短片路径（原生端且开启时才有），带出即出现 LIVE 角标。
+          livePath: c.livePath,
           // 拍摄的照片暂不归属特定宠物（用户后续可指定）
         ),
+      // 用户在 App 内删掉的云端照片在这里被过滤（本地屏蔽，见 PhotoStorage）。
       for (final w in cloudPhotos)
-        _AlbumItem(
-          source: SourcePhoto(url: w.url, caption: '拍摄照片'),
-          image: CachedNetworkImageProvider(w.url),
-          caption: _fmtDateTime(w.takenAt),
-          takenAt: w.takenAt,
-          petId: w.petId,
-        ),
+        if (!hiddenUrls.contains(w.url))
+          _AlbumItem(
+            source: SourcePhoto(url: w.url, caption: '拍摄照片'),
+            image: CachedNetworkImageProvider(w.url),
+            caption: _fmtDateTime(w.takenAt),
+            takenAt: w.takenAt,
+            petId: w.petId,
+            deletable: true,
+            cloudUrl: w.url,
+          ),
+      // 种子图是内置内容，不允许删除。
       for (final p in seed)
         _AlbumItem(
           source: SourcePhoto(url: p.remoteUrl, caption: p.petId),
@@ -5700,13 +6226,20 @@ class _PhotoTile extends StatelessWidget {
             borderRadius: BorderRadius.circular(AppUi.radiusCard),
           ),
           clipBehavior: Clip.antiAlias,
-          child: AspectRatio(
-            aspectRatio: aspectRatio,
-            child: Image(
-              image: item.image,
-              fit: BoxFit.cover,
-              filterQuality: FilterQuality.medium,
-            ),
+          child: Stack(
+            children: [
+              AspectRatio(
+                aspectRatio: aspectRatio,
+                child: Image(
+                  image: item.image,
+                  fit: BoxFit.cover,
+                  filterQuality: FilterQuality.medium,
+                ),
+              ),
+              // 动态照片角标（对齐 iOS 相册左上角的 LIVE 标签）。
+              if (item.hasLive)
+                const Positioned(top: 8, left: 8, child: _LiveBadge()),
+            ],
           ),
         ),
       ),
@@ -5714,7 +6247,15 @@ class _PhotoTile extends StatelessWidget {
   }
 
   void _showPreview(BuildContext context) {
-    // 长按预览（后续可加分享/删除等操作）
+    // 长按 = 播放动态照片，对齐 iOS 相册里长按 Live Photo 就动起来的直觉。
+    if (item.hasLive) {
+      showDialog<void>(
+        context: context,
+        builder: (_) => _LivePhotoPlayerDialog(item: item),
+      );
+      return;
+    }
+    // 没有动态短片的照片，长按只提示拍摄时间（保留原有反馈）。
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('拍摄于 ${item.caption}'),
@@ -5724,13 +6265,220 @@ class _PhotoTile extends StatelessWidget {
   }
 }
 
-/// 全屏照片预览弹窗（圆角 + 底部信息）。
-class _PhotoDialog extends StatelessWidget {
-  const _PhotoDialog({required this.item});
+/// 动态照片角标（对齐 iOS 相册左上角的 LIVE 标签）。
+///
+/// 用同心圆小图标 + LIVE 字样：和相机页顶部的开关同一套视觉语言，
+/// 用户一眼能把"这个能播"和"那个是开关"联系起来。
+class _LiveBadge extends StatelessWidget {
+  const _LiveBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 1.2),
+            ),
+            child: Center(
+              child: Container(
+                width: 3,
+                height: 3,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          const Text(
+            'LIVE',
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 动态照片播放弹窗：在相册里长按 LIVE 照片时打开，循环播放那 2 秒短片。
+///
+/// 做成"打开后循环播放、点击关闭"，而不是 iOS 的"按住才播、松手即停"：
+/// Flutter 的长按回调拿不到可靠的松手时机（松手时弹窗已经打开了）。
+/// 播放器本身由 [buildLivePlayer] 构造，Web 端自动回落为静态图。
+class _LivePhotoPlayerDialog extends StatelessWidget {
+  const _LivePhotoPlayerDialog({required this.item});
+
   final _AlbumItem item;
 
   @override
   Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => Navigator.pop(context),
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(
+          children: [
+            Center(
+              child: buildLivePlayer(
+                // 只有 hasLive 才会打开本弹窗（见 _PhotoTile._showPreview）。
+                item.livePath!,
+                fallback: Image(image: item.image, fit: BoxFit.contain),
+              ),
+            ),
+            const Positioned(top: 60, left: 20, child: _LiveBadge()),
+            Positioned(
+              bottom: 56,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Text(
+                  '动态照片 · 点击关闭',
+                  style: TextStyle(
+                    fontSize: AppUi.fontCaption,
+                    color: Colors.white.withValues(alpha: 0.7),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 全屏照片预览弹窗（可双指缩放 + 保存到相册）。
+class _PhotoDialog extends ConsumerStatefulWidget {
+  const _PhotoDialog({required this.item});
+  final _AlbumItem item;
+
+  @override
+  ConsumerState<_PhotoDialog> createState() => _PhotoDialogState();
+}
+
+class _PhotoDialogState extends ConsumerState<_PhotoDialog> {
+  bool _saving = false;
+  bool _deleting = false;
+
+  /// 取原图字节：本地拍摄的照片直接有 bytes；云端照片（COS）需要现拉一次。
+  /// 保存必须是**原图**，不能用屏幕上那份已经被缩放显示过的位图。
+  Future<Uint8List?> _loadBytes() async {
+    final local = widget.item.source.bytes;
+    if (local != null && local.isNotEmpty) return local;
+    final url = widget.item.source.url;
+    if (url == null || url.isEmpty) return null;
+    try {
+      final resp = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 20));
+      if (resp.statusCode != 200) return null;
+      return resp.bodyBytes;
+    } catch (e) {
+      debugPrint('[保存照片] 下载原图失败：$e');
+      return null;
+    }
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    String? problem;
+    try {
+      final bytes = await _loadBytes();
+      if (bytes == null) {
+        problem = '照片还没准备好，请稍后再试';
+      } else {
+        problem = await savePhotoToGallery(bytes);
+      }
+    } catch (e) {
+      problem = '保存失败：$e';
+    }
+    if (!mounted) return;
+    setState(() => _saving = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          problem ??
+              (gallerySaveSupported ? '已保存到系统相册' : '已开始下载'),
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  /// 删除这张照片（二次确认）。
+  ///
+  /// 两条路径：
+  ///   - 本地拍摄：内存列表 + 磁盘文件一起删（[CapturedPhotosNotifier.remove]）。
+  ///   - 已上传云端：服务端暂无删除接口，记入本地屏蔽表——在 App 内看不见
+  ///     即等于删掉，避免出现"删了又回来"的错觉。
+  Future<void> _delete() async {
+    if (_deleting) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('删除这张照片？'),
+        content: const Text('删除后无法恢复。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(c).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(c).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _deleting = true);
+    final url = widget.item.cloudUrl;
+    if (url != null && url.isNotEmpty) {
+      await ref.read(hiddenPhotoUrlsProvider.notifier).hide(url);
+    } else {
+      CapturedPhoto? target;
+      for (final p in ref.read(capturedPhotosProvider)) {
+        if (p.takenAt == widget.item.takenAt) {
+          target = p;
+          break;
+        }
+      }
+      if (target != null) {
+        ref.read(capturedPhotosProvider.notifier).remove(target);
+      }
+    }
+    if (!mounted) return;
+    // pop 之后本 context 失效，先取出 messenger 再关闭弹窗。
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.of(context).pop();
+    messenger.showSnackBar(
+      const SnackBar(content: Text('已删除'), duration: Duration(seconds: 2)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    final media = MediaQuery.of(context).size;
     return Dialog(
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.all(20),
@@ -5739,22 +6487,76 @@ class _PhotoDialog extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Image(
-              image: item.image,
-              fit: BoxFit.contain,
-              filterQuality: FilterQuality.medium,
+            // 双指缩放 / 拖动查看画质细节——宠物照片经常要放大看毛和眼睛。
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: media.height * 0.68,
+                maxWidth: media.width,
+              ),
+              child: InteractiveViewer(
+                minScale: 1,
+                maxScale: 6,
+                clipBehavior: Clip.hardEdge,
+                child: Image(
+                  image: widget.item.image,
+                  fit: BoxFit.contain,
+                  filterQuality: FilterQuality.medium,
+                ),
+              ),
             ),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-              decoration: BoxDecoration(color: context.tokens.surface),
-              child: Text(
-                item.caption,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: context.tokens.textSecondary,
-                  fontSize: AppUi.fontCaption,
-                ),
+              padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+              decoration: BoxDecoration(color: t.surface),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.item.caption,
+                      style: TextStyle(
+                        color: t.textSecondary,
+                        fontSize: AppUi.fontCaption,
+                      ),
+                    ),
+                  ),
+                  if (widget.item.deletable)
+                    TextButton.icon(
+                      onPressed: (_saving || _deleting) ? null : _delete,
+                      icon: _deleting
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.delete_outline, size: 18),
+                      label: const Text('删除'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFFE5484D),
+                        textStyle: const TextStyle(
+                          fontSize: AppUi.fontBody,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  TextButton.icon(
+                    onPressed: (_saving || _deleting) ? null : _save,
+                    icon: _saving
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.save_alt, size: 18),
+                    label: Text(gallerySaveSupported ? '保存到相册' : '下载'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: t.textPrimary,
+                      textStyle: const TextStyle(
+                        fontSize: AppUi.fontBody,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -6886,6 +7688,7 @@ class SettingsPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.tokens;
     final mode = ref.watch(themeModeProvider);
+    final liveOn = ref.watch(livePhotoEnabledProvider);
     return _Shell(
       title: '设置',
       body: ListView(
@@ -6897,6 +7700,17 @@ class SettingsPage extends ConsumerWidget {
             selectedMode: mode,
             onChanged: (value) =>
                 ref.read(themeModeProvider.notifier).setMode(value),
+          ),
+          const SizedBox(height: 24),
+          const _SettingsSectionTitle(title: '拍摄'),
+          const SizedBox(height: 12),
+          _SettingsSwitchRow(
+            title: '动态照片',
+            // 说清与苹果的差异，避免用户按"前后各 1.5 秒"的预期来期待。
+            subtitle: '拍照后自动记录 2 秒动态，在相册里长按照片即可播放',
+            value: liveOn,
+            onChanged: (v) =>
+                ref.read(livePhotoEnabledProvider.notifier).setEnabled(v),
           ),
           const SizedBox(height: 24),
           const _SettingsSectionTitle(title: '数据'),
@@ -6981,6 +7795,68 @@ class SettingsPage extends ConsumerWidget {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 设置页的开关行：左侧标题 + 说明，右侧 Switch。
+///
+/// 与 [_ActionRow] 的区别是它表达"持续生效的状态"而不是"一次性的动作"，
+/// 所以用 Switch 而不是箭头——用户一眼能看出当前是开还是关。
+class _SettingsSwitchRow extends StatelessWidget {
+  const _SettingsSwitchRow({
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+      decoration: BoxDecoration(
+        color: t.surface,
+        borderRadius: BorderRadius.circular(AppUi.radiusCard),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: AppUi.fontBody,
+                    fontWeight: FontWeight.w600,
+                    color: t.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: AppUi.fontCaption,
+                    color: t.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: value,
+            activeThumbColor: t.brand,
+            onChanged: onChanged,
           ),
         ],
       ),

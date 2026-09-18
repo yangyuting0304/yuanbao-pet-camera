@@ -27,6 +27,12 @@ class PetFilterKernel {
   /// 高光滚降的膝盖位置：0.70 以上开始往下压，保住毛发高光层次。
   static const double _rolloffKnee = 0.70;
 
+  /// 阴影提亮的膝盖位置：只在这个亮度以下做提亮，以上完全不动。
+  ///
+  /// 取 0.35（约 89/255）：这是"真正的阴影"的天花板。超过它的中间调
+  /// 一旦被抬起来，整幅就发灰——这是"通透感"和"发闷"的分界线。
+  static const double _shadowKnee = 0.35;
+
   /// 微对比强度系数。把 profile 里的 `clarity`（0.12~0.28）映射成
   /// unsharp mask 的合理 amount（约 0.5~1.1）——宠物毛发要的是"根根分明"，
   /// 不是"刀锋般锐利"，所以上限刻意压得低。
@@ -50,8 +56,13 @@ class PetFilterKernel {
   /// 与降噪 coring 的 cut 同一量级、方向相反——降噪削掉小振幅高频，
   /// texture 只放大超过阈值的振幅。中间带不动，于是噪点不放大、
   /// 毛发边缘被增强，这正是"边缘遮罩（masking）"的含义。
-  static const double _midGateLo = 6.0, _midGateHi = 22.0;
-  static const double _sharpGateLo = 8.0, _sharpGateHi = 26.0;
+  ///
+  /// ⚠️ 阈值**必须高于 JPEG 压缩伪影**：手机出片都是 JPEG，8×8 块效应
+  /// 的幅度恰好在 8~20 之间。早先把门槛设在 6~22，等于把压缩伪影当成
+  /// "毛发边缘"成倍放大——真机实拍出来就是一层脏斑点。
+  /// 真正的毛发边缘幅度在 40 以上，门槛往那儿放才安全。
+  static const double _midGateLo = 16.0, _midGateHi = 44.0;
+  static const double _sharpGateLo = 18.0, _sharpGateHi = 46.0;
 
   /// 眼睛增强：区域内暗部提亮上限（/255）与眼神光锐化系数。
   /// 提亮走 (1−l)^1.5 曲线：瞳孔提得最多，白毛高光几乎不动。
@@ -91,15 +102,19 @@ class PetFilterKernel {
     required double shadowLift,
     required double highlightRolloff,
   }) {
-    // gamma < 1 会抬起中低调，即"阴影提亮"。
-    final gamma = 1.0 / (1.0 + shadowLift.clamp(0.0, 1.0) * 0.8);
+    final lift = shadowLift.clamp(0.0, 1.0);
     final roll = highlightRolloff.clamp(0.0, 1.0);
     final lut = List<double>.filled(256, 0.0);
     for (var i = 0; i < 256; i++) {
       var v = (i / 255.0) * exposureGain * channelGain;
       v = v.clamp(0.0, 1.0);
-      if (gamma != 1.0) {
-        v = math.pow(v, gamma).toDouble();
+      // 阴影提亮：**只抬最暗的一段**（[_shadowKnee] 以下），再往上分毫不动。
+      //
+      // 早先这里用全局 gamma（pow）抬整个中低调，代价是整幅发灰、失去通透感
+      // ——真实照片的中间调本该保持原样，实拍反馈"还不如原相机"有一半来自这里。
+      // 用乘法而非加法：纯黑乘任何系数仍是纯黑，不会把暗场提成灰雾。
+      if (lift > 0 && v > 0 && v < _shadowKnee) {
+        v *= 1.0 + lift * 1.2 * (1.0 - v / _shadowKnee);
       }
       // 二次项 t² 保证在膝盖处斜率连续，不会出现肉眼可见的硬折点。
       if (roll > 0 && v > _rolloffKnee) {
@@ -153,10 +168,36 @@ class PetFilterKernel {
     final ev = exposure.clamp(-3.0, 3.0);
     final exposureGain = ev == 0 ? 1.0 : math.pow(2.0, ev).toDouble();
 
+    // 色温自适应：画面本身已经偏暖时（室内暖光灯非常常见），把暖调偏移
+    // 收一部分回来——否则"我们设定的暖调"叠在"暖光场景"上就是双重偏暖，
+    // 画面黄得发浊。实拍反馈"不如原相机"里也有一部分是它。
+    var effectiveTempShift = tempShift;
+    if (tempShift > 0 && n > 64) {
+      var sumR = 0;
+      var sumB = 0;
+      var counted = 0;
+      // 抽样统计即可（步长 37 避开周期性纹理），不必全图扫一遍。
+      for (var i = 0; i < n; i += 37) {
+        final o = i * 4;
+        sumR += src[o];
+        sumB += src[o + 2];
+        counted++;
+      }
+      if (counted > 0) {
+        // R/B 比值 ≈ 1 表示画面中性；明显大于 1 说明场景本来就偏暖。
+        final warmBias = sumR / math.max(sumB, 1);
+        if (warmBias > 1.30) {
+          effectiveTempShift = tempShift * 0.5;
+        } else if (warmBias > 1.15) {
+          effectiveTempShift = tempShift * 0.75;
+        }
+      }
+    }
+
     // 色温：暖调抬红压蓝，且红的增益**略小于**蓝的衰减，
     // 保证整体亮度不至于明显漂移。
-    final rGain = 1.0 + tempShift * 0.00018;
-    final bGain = 1.0 - tempShift * 0.00022;
+    final rGain = 1.0 + effectiveTempShift * 0.00018;
+    final bGain = 1.0 - effectiveTempShift * 0.00022;
 
     final lutR = _quantize(
       buildChannelLut(
@@ -417,7 +458,26 @@ class PetFilterKernel {
   }
 
   /// 可分离盒式模糊（O(n)，与半径无关）。用于微对比与降噪的高频参考。
+  ///
+  /// **串联两趟**：单趟盒式模糊的核是**方形**的，会在毛发这种高频纹理上
+  /// 留下横竖条纹状伪影（观感就是"脏""塑料感"）；两趟串联后核形状接近
+  /// 高斯，边缘过渡自然得多。代价是耗时翻倍，但在 isolate 里跑得起。
+  ///
+  /// 每趟半径按 1/√2 缩小，让"两趟后的等效半径"与调用方传入的 [radius]
+  /// 基本一致——否则所有依赖模糊尺度的参数（clarity / texture）都会
+  /// 在你不知情的情况下被放大 1.4 倍。
   static Float32List _boxBlur(
+    Float32List src,
+    int width,
+    int height,
+    int radius,
+  ) {
+    final r = math.max(1, (radius / 1.4142).round());
+    final once = _boxBlurPass(src, width, height, r);
+    return _boxBlurPass(once, width, height, r);
+  }
+
+  static Float32List _boxBlurPass(
     Float32List src,
     int width,
     int height,
@@ -563,12 +623,14 @@ class PetFilter {
 
   /// 输出长边的默认上限。
   ///
-  /// 相机原图可能到 4000px+，纯 Dart 逐像素处理在网页端会明显卡顿；
-  /// 超过这个尺寸先等比缩下来再处理。2400px 对手机分享/打印都够用。
-  static const int defaultMaxSide = 2400;
+  /// 相机原图常在 4000px：早先压到 2400 会丢掉 40% 的像素，实拍反馈
+  /// "不够清晰"——那部分损失是这里来的。提到 3000 找回细节，
+  /// 同时仍在纯 Dart 逐像素处理的耗时与内存可承受范围内。
+  static const int defaultMaxSide = 3000;
 
-  /// 默认导出画质。92 是"肉眼无明显损失、体积可控"的常用档。
-  static const int defaultJpegQuality = 92;
+  /// 默认导出画质。95 对宠物毛发这类高频细节明显比 92 更耐看，
+  /// 体积代价约 20% —— 值得。
+  static const int defaultJpegQuality = 95;
 
   /// 由参数集构造跨 isolate 的任务。
   ///

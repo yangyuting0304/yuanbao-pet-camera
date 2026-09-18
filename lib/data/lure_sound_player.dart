@@ -106,5 +106,9 @@ double defaultVolumeFor(PetSpecies species) {
       return 0.60;
     case PetSpecies.dog:
       return 0.75;
+    case PetSpecies.fish:
+      // 鱼没有引诱音效（水下的声音对鱼意义不大且可能惊缸），
+      // 这里只是把音量旋钮留在中位，等真的接音效时再调。
+      return 0.60;
   }
 }

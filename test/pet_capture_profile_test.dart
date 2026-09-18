@@ -7,10 +7,18 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pet_camera/data/pet_capture_profile.dart';
 
+/// 有「毛色」维度的物种。
+///
+/// 鱼是唯一例外：它没有毛，曝光补偿、眼睛增强、毛发质感、引诱音效这些
+/// 按"毛感"或"陆地听觉"推导的规则对它都不适用（见 [PetSpecies.fish] 说明）。
+/// 所以凡是"所有物种都…"的断言都要避开它，并**另写一条测试**明确记录
+/// 鱼的例外行为——否则将来有人把鱼当成 bug 改回去，就没有防线了。
+bool _hasCoat(PetSpecies s) => s != PetSpecies.fish;
+
 void main() {
   group('曝光补偿：白毛加、黑毛减', () {
     test('白毛为正 EV，且幅度够大（≥ +0.7）', () {
-      for (final species in PetSpecies.values) {
+      for (final species in PetSpecies.values.where(_hasCoat)) {
         final p = PetCaptureProfile.resolve(
           species: species,
           coat: PetCoat.white,
@@ -24,7 +32,7 @@ void main() {
     });
 
     test('黑毛为负 EV', () {
-      for (final species in PetSpecies.values) {
+      for (final species in PetSpecies.values.where(_hasCoat)) {
         final p = PetCaptureProfile.resolve(
           species: species,
           coat: PetCoat.black,
@@ -188,8 +196,8 @@ void main() {
   });
 
   group('美颜：质感增强而非平滑', () {
-    test('所有组合都开启眼睛增强，且不提供磨皮类能力', () {
-      for (final species in PetSpecies.values) {
+    test('有毛物种都开启眼睛增强与毛发质感增强', () {
+      for (final species in PetSpecies.values.where(_hasCoat)) {
         final p = PetCaptureProfile.resolve(
           species: species,
           coat: PetCoat.tabby,
@@ -197,6 +205,24 @@ void main() {
         expect(p.eyeEnhance, isTrue);
         expect(p.furTextureBoost, isTrue);
       }
+    });
+
+    test('鱼例外：水下不适用眼区提亮与毛发增强', () {
+      final p = PetCaptureProfile.resolve(
+        species: PetSpecies.fish,
+        coat: PetCoat.tabby,
+      );
+      expect(
+        p.eyeEnhance,
+        isFalse,
+        reason: '眼区定位是"画面中上部椭圆"的廉价近似，鱼缸那里正好是水面与灯管',
+      );
+      expect(
+        p.furTextureBoost,
+        isFalse,
+        reason: '毛发质感增强会连带放大水中的悬浮颗粒与气泡边缘，画面立刻变脏',
+      );
+      expect(p.tearStainFix, isFalse, reason: '鱼没有泪痕');
     });
 
     test('猫与狗需要泪痕淡化，兔与龙猫不需要', () {
@@ -245,8 +271,8 @@ void main() {
   });
 
   group('音效引诱', () {
-    test('每个物种都有自己的引诱音效，且不串种', () {
-      for (final species in PetSpecies.values) {
+    test('陆生物种都有自己的引诱音效，且不串种', () {
+      for (final species in PetSpecies.values.where(_hasCoat)) {
         final p = PetCaptureProfile.resolve(
           species: species,
           coat: PetCoat.tabby,
@@ -258,6 +284,86 @@ void main() {
           reason: '不得把狗的哨声推给猫',
         );
       }
+    });
+
+    test('鱼没有引诱音效（水下声音无意义，还可能惊缸）', () {
+      final p = PetCaptureProfile.resolve(
+        species: PetSpecies.fish,
+        coat: PetCoat.tabby,
+      );
+      expect(p.lureSounds, isEmpty);
+    });
+  });
+
+  group('鱼缸模式：隔着玻璃拍的三条硬规则', () {
+    test('必须禁闪光——闪光会被玻璃直接反回来', () {
+      final p = PetCaptureProfile.resolve(
+        species: PetSpecies.fish,
+        coat: PetCoat.tabby,
+      );
+      expect(p.flashPolicy, FlashPolicy.forbidden);
+      expect(p.silentShutter, isTrue, reason: '快门声与水波震动会惊鱼');
+    });
+
+    test('高光压制与暖调偏移都是全物种最强（压反光、中和水色）', () {
+      final fish = PetCaptureProfile.resolve(
+        species: PetSpecies.fish,
+        coat: PetCoat.tabby,
+      );
+      for (final other in PetSpecies.values.where(_hasCoat)) {
+        final o = PetCaptureProfile.resolve(
+          species: other,
+          coat: PetCoat.tabby,
+        );
+        expect(
+          fish.highlightRolloff,
+          greaterThanOrEqualTo(o.highlightRolloff),
+          reason: '${other.label}的高光压制不该比鱼缸更强',
+        );
+        expect(
+          fish.tempShift,
+          greaterThanOrEqualTo(o.tempShift),
+          reason: '${other.label}的暖调偏移不该比鱼缸更强',
+        );
+      }
+    });
+
+    test('任何场景下快门都不低于 1/1000s（鱼的动作碎且不可预测）', () {
+      for (final scene in PetScene.values) {
+        final p = PetCaptureProfile.resolve(
+          species: PetSpecies.fish,
+          coat: PetCoat.tabby,
+          scene: scene,
+        );
+        expect(p.shutterDenominator, greaterThanOrEqualTo(1000));
+      }
+    });
+
+    test('毛色不影响鱼的曝光——否则"白毛档"会把整个鱼缸拍过曝', () {
+      final white = PetCaptureProfile.resolve(
+        species: PetSpecies.fish,
+        coat: PetCoat.white,
+      );
+      final black = PetCaptureProfile.resolve(
+        species: PetSpecies.fish,
+        coat: PetCoat.black,
+      );
+      expect(white.exposureCompensation, black.exposureCompensation);
+      expect(
+        white.exposureCompensation,
+        lessThan(0.5),
+        reason: '不能把白毛的 +0.85EV 套到鱼缸上',
+      );
+    });
+
+    test('摘要文案不提毛色（鱼没有毛）', () {
+      final p = PetCaptureProfile.resolve(
+        species: PetSpecies.fish,
+        coat: PetCoat.white,
+      );
+      expect(p.summary.contains('白/奶油毛'), isFalse);
+      expect(p.summary.contains('鱼'), isTrue);
+      expect(p.summary.contains('鱼缸整体亮度'), isTrue);
     });
   });
 

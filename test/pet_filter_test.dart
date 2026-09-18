@@ -652,6 +652,53 @@ void main() {
       );
     });
 
+    test('JPEG 压缩伪影级别的幅度（相邻差约 12）绝不能被放大', () {
+      // 手机出片都是 JPEG，8×8 块效应伪影的幅度恰好落在 8~20 之间。
+      // 门控门槛必须压在它之上——早先门槛设在 6，等于把压缩伪影当成
+      // "毛发边缘"成倍放大，真机实拍出来就是一层脏斑点。
+      // 这条测试是那个坑的防线：谁把 _midGateLo 调回 10 以下，这里就会红。
+      const w = 48;
+      Uint8List noisyAt(int base, int amp) {
+        final out = Uint8List(w * 48 * 4);
+        for (var y = 0; y < 48; y++) {
+          for (var x = 0; x < w; x++) {
+            final v = (x + y) % 2 == 0 ? base + amp : base - amp;
+            final o = (y * w + x) * 4;
+            out[o] = v;
+            out[o + 1] = v;
+            out[o + 2] = v;
+            out[o + 3] = 255;
+          }
+        }
+        return out;
+      }
+
+      double rough(Uint8List buf) {
+        var sum = 0;
+        var count = 0;
+        for (var y = 1; y < 47; y++) {
+          for (var x = 1; x < w - 1; x++) {
+            sum += (_px(buf, w, x, y)[0] - _px(buf, w, x + 1, y)[0]).abs();
+            count++;
+          }
+        }
+        return count == 0 ? 0 : sum / count;
+      }
+
+      final src = noisyAt(128, 6); // 相邻差 12，正当 JPEG 伪影范围
+      final out = PetFilterKernel.apply(
+        src,
+        width: w,
+        height: 48,
+        texture: 0.6, // 用比生产更强的档位，防线才够硬
+      );
+      expect(
+        rough(out),
+        lessThanOrEqualTo(rough(src) * 1.2),
+        reason: '把压缩伪影放大出来，照片会变"脏"——这是最容易被误认为"质感提升"的陷阱',
+      );
+    });
+
     test('texture=0 与旧版行为逐字节一致（回归保护）', () {
       const w = 24;
       final src = stepEdge(w, 24, 80, 180);

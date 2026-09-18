@@ -104,6 +104,28 @@ class PetLabelMapper {
   /// 顺序即优先级：越"小众"的越先匹配。否则 `guinea pig` 会先命中
   /// 含有 `pig` 的关键字，`chinchilla` 会先被当成普通啮齿类。
   static const Map<PetSpecies, List<String>> keywords = {
+    // 鱼类放在最前：云端供应商若真返回了鱼的标签，先归到这里。
+    // （端侧 EfficientDet 训练在 COCO 上，COCO 无鱼类，识别不出来；
+    //   鱼缸场景目前靠用户在「拍谁」里手动选，见 PetSpecies.fish 注释。）
+    PetSpecies.fish: [
+      'goldfish',
+      'koi',
+      'betta',
+      'guppy',
+      'angelfish',
+      'cichlid',
+      'tetra',
+      'aquarium',
+      'fish',
+      '金鱼',
+      '锦鲤',
+      '斗鱼',
+      '孔雀鱼',
+      '神仙鱼',
+      '热带鱼',
+      '观赏鱼',
+      '鱼',
+    ],
     PetSpecies.chinchilla: [
       'chinchilla',
       'guinea pig',

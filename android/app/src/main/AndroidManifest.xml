@@ -7,6 +7,11 @@
          且会被误判为「设备不支持音频」。必须在此声明。 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- 成片写入系统相册。Android 10+ 走 MediaStore 不需要该权限，
+         所以用 maxSdkVersion 限定在旧系统上申请，避免新系统多一个敏感权限。 -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
     <!-- required=false：无麦克风的设备（如部分平板）仍可安装，仅录音降级为无声。 -->
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <!-- 网络权限：AI 写真/成片代理请求（Flutter 模板默认只在 debug/profile 清单里

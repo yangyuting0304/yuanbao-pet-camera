@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:pet_camera/app/app.dart';
 import 'package:pet_camera/data/app_font.dart';
+import 'package:pet_camera/data/live_photo.dart';
 import 'package:pet_camera/data/task_store.dart';
 
 void main() async {
@@ -23,6 +24,8 @@ Future<void> _initHive() async {
     await Hive.initFlutter();
     await Hive.openBox('growthRecords');
     await Hive.openBox(TaskStore.boxName);
+    // 应用级开关（动态照片等）。与业务数据分箱，避免相互影响。
+    await Hive.openBox(LivePhotoPrefs.boxName);
   } catch (e) {
     debugPrint('Hive 初始化失败，继续以内存模式启动: $e');
   }

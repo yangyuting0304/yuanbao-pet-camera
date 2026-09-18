@@ -17,11 +17,16 @@
 library;
 
 /// 目标物种。
+///
+/// 说明：**鱼无法自动识别**——检测模型训练在 COCO 上，而 COCO 80 类里
+/// 没有鱼类，鱼缸隔着玻璃、有水草气泡干扰，公开的鱼类检测模型也少。
+/// 所以 `fish` 是**纯手动选择**的物种：用户选一次，之后走鱼缸专用参数。
 enum PetSpecies {
   cat('猫', '🐱'),
   dog('狗', '🐶'),
   rabbit('兔', '🐰'),
-  chinchilla('龙猫', '🐭');
+  chinchilla('龙猫', '🐭'),
+  fish('鱼', '🐟');
 
   const PetSpecies(this.label, this.emoji);
   final String label;
@@ -145,7 +150,8 @@ enum PetLook {
     shadowLift: 0.05,
     saturation: 0.03,
     vibrance: 0.08,
-    grain: 0.05,
+    // 颗粒与暗角在手机小屏上普遍是减分项（显噪、显脏），全线压低。
+    grain: 0.02,
   ),
 
   filmBrown(
@@ -157,7 +163,7 @@ enum PetLook {
     clarity: -0.05,
     saturation: -0.05,
     vibrance: 0.05,
-    grain: 0.12,
+    grain: 0.05,
   ),
 
   softWindow(
@@ -167,7 +173,7 @@ enum PetLook {
     highlightRolloff: 0.25,
     shadowLift: 0.15,
     clarity: -0.03,
-    grain: 0.03,
+    grain: 0.01,
   ),
 
   backlitGold(
@@ -176,9 +182,9 @@ enum PetLook {
     tempShift: 250,
     highlightRolloff: 0.15,
     shadowLift: 0.20,
-    clarity: 0.12,
+    clarity: 0.06,
     vibrance: 0.25,
-    grain: 0.06,
+    grain: 0.02,
   ),
 
   nightGuard(
@@ -186,10 +192,10 @@ enum PetLook {
     hint: '龙猫、夜间；颗粒顺便把高感噪点变成质感',
     tempShift: 150,
     shadowLift: 0.25,
-    clarity: 0.05,
+    clarity: 0.03,
     saturation: -0.04,
-    grain: 0.10,
-    vignette: 0.06,
+    grain: 0.04,
+    vignette: 0.02,
   ),
 
   outdoorVivid(
@@ -198,10 +204,10 @@ enum PetLook {
     tempShift: 50,
     highlightRolloff: 0.15,
     shadowLift: 0.05,
-    clarity: 0.10,
+    clarity: 0.05,
     saturation: 0.06,
     vibrance: 0.10,
-    grain: 0.03,
+    grain: 0.01,
   );
 
   const PetLook({
@@ -385,10 +391,12 @@ class PetCaptureProfile {
 
   /// `furTextureBoost` 生效时的 texture 强度（0..1，传入滤镜内核）。
   ///
-  /// 取值依据：毛边处中频幅度约 20~40/255，全额门控下单像素增量
-  /// ≈ 0.45 × 30 ≈ 13 —— 毛发「根根分明」，但不产生伪轮廓。
-  /// 内部还会按固定比例派生一层遮罩锐化（见 pet_filter 的 _sharpRatio）。
-  static const double furTextureStrength = 0.45;
+  /// 早期版本给 0.45，真机实拍反馈"毛发很丑"——过强。原因有三：
+  /// 方形模糊核留下条纹伪影、门控阈值过低放大了 JPEG 压缩噪点、
+  /// 且与基线 clarity 叠加成三层锐化必然过冲。
+  /// 三者修正后强度砍到 0.22：**锐化是最容易做过头的美化**，
+  /// 宁可欠一点，也不要出现光晕和脏点。
+  static const double furTextureStrength = 0.22;
 
   /// `eyeEnhance` 生效时的整体强度系数。
   /// 内部曲线：眼区暗部提亮上限 14/255（(1−l)^1.5，护高光）+ 门控锐化 0.35。
@@ -412,9 +420,11 @@ class PetCaptureProfile {
       focusTarget: FocusTarget.nearestEye,
       tempShift: 300,
       highlightRolloff: 0.55,
-      clarity: 0.15,
-      noiseReduction: 0.20,
-      vignette: 0.2,
+      // 锐化类参数全线收敛：真机反馈"增强过度反而更丑"。
+      // clarity 与 texture、滤镜的 clarity 是三层叠加，各自都不能给满。
+      clarity: 0.10,
+      noiseReduction: 0.14,
+      vignette: 0.10,
       tearStainFix: true,
       furTextureBoost: true,
       why: '猫易惊、瞳孔对光敏感，用静音快门 + 禁闪光；短毛易反光，用微对比提质感而非锐化',
@@ -428,9 +438,9 @@ class PetCaptureProfile {
       focusTarget: FocusTarget.nearestEye,
       tempShift: 250,
       highlightRolloff: 0.5,
-      clarity: 0.18,
-      noiseReduction: 0.18,
-      vignette: 0.15,
+      clarity: 0.12,
+      noiseReduction: 0.12,
+      vignette: 0.08,
       tearStainFix: true,
       furTextureBoost: true,
       why: '狗动作幅度大、户外多，快门要拉满；毛色跨度最大，曝光补偿最依赖毛色判断',
@@ -444,12 +454,41 @@ class PetCaptureProfile {
       focusTarget: FocusTarget.face,
       tempShift: 250,
       highlightRolloff: 0.6,
-      clarity: 0.12,
-      noiseReduction: 0.22,
-      vignette: 0.18,
+      clarity: 0.08,
+      noiseReduction: 0.15,
+      vignette: 0.09,
       tearStainFix: false,
       furTextureBoost: true,
       why: '白化种有红眼，必须禁闪光；整体安静但鼻须高频动，快门不能低于 1/500s',
+    ),
+    PetSpecies.fish: _SpeciesBase(
+      // 有鱼缸灯：ISO 不必推太高，但要给高快门留余量。
+      isoMin: 200,
+      isoMax: 1600,
+      // 水体与蓝白 LED 灯偏冷，白平衡往高给（插件只支持 auto/lock，
+      // 这里主要是展示 + 后处理色温偏移的参考）。
+      whiteBalanceK: 6500,
+      // 快门声与机身震动会惊鱼、也会让水面泛起波纹。
+      silentShutter: true,
+      // 隔着玻璃用闪光，光会直接反回来糊掉整张照片——必须禁。
+      flashPolicy: FlashPolicy.forbidden,
+      // 鱼缸构图基本固定，主体就在中心，不需要眼睛/面部定位。
+      focusTarget: FocusTarget.center,
+      // 全物种里最高的暖调：中和水体与冷色灯的偏色。
+      tempShift: 420,
+      // 全物种里最强的高光压制：玻璃反光是典型高光，不压就是一团白。
+      highlightRolloff: 0.70,
+      // 鳞片与鳍的细节靠微对比浮出来（但同样收敛，避免与滤镜叠加过冲）。
+      clarity: 0.14,
+      // 有灯光，噪点本来就少；多降噪只会把水中的细颗粒抹成塑料感。
+      noiseReduction: 0.10,
+      // 鱼缸本身四周就偏暗，再叠暗角会显得脏。
+      vignette: 0.06,
+      tearStainFix: false,
+      // 关键：鱼没有毛发。开毛发质感增强会把水里的悬浮颗粒、气泡边缘
+      // 一并放大，画面立刻"脏"掉——这一项对水下场景是负收益。
+      furTextureBoost: false,
+      why: '隔着玻璃拍：禁闪光（会反光）、强暖调中和水体偏色、强压高光（玻璃反光）、鱼游动快所以快门拉到 1/1000s',
     ),
     PetSpecies.chinchilla: _SpeciesBase(
       isoMin: 1600,
@@ -460,9 +499,9 @@ class PetCaptureProfile {
       focusTarget: FocusTarget.nearestEye,
       tempShift: 350,
       highlightRolloff: 0.45,
-      clarity: 0.28,
-      noiseReduction: 0.30,
-      vignette: 0.22,
+      clarity: 0.18,
+      noiseReduction: 0.20,
+      vignette: 0.11,
       tearStainFix: false,
       furTextureBoost: true,
       why: '夜行性、极怕光怕惊 → 弱光优先 + 禁闪光 + 静音快门；丝状绒毛几千根挤一起极易糊成一团，需要更强的微对比',
@@ -488,7 +527,10 @@ class PetCaptureProfile {
     final isoMax = (base.isoMax * isoScale).round().clamp(100, 6400);
 
     // 曝光补偿 = 毛色基准 + 场景修正（逆光要加）。
-    var ev = coat.exposureCompensation;
+    //
+    // 例外：鱼没有"毛色"可言，决定鱼缸曝光的是水体与灯光的整体亮度。
+    // 若沿用毛色基准，"白毛 +0.85EV"会把整个鱼缸推到过曝。
+    var ev = species == PetSpecies.fish ? 0.10 : coat.exposureCompensation;
     if (scene == PetScene.backlight) ev += 0.8;
     if (scene == PetScene.outdoor) ev -= 0.15;
     // 弱光下不要把 EV 推太高，否则噪点爆炸。
@@ -500,7 +542,11 @@ class PetCaptureProfile {
     var clarity = base.clarity;
     var saturation = 1.0;
     var highlightRolloff = base.highlightRolloff;
-    var shadowLift = 0.10;
+    // 默认暗部提亮刻意给得很轻：**全局提暗部是"画面发灰"的头号原因**。
+    // 真实照片的暗部本该是暗的，无差别抬起来会让整幅失去通透感
+    // （实拍反馈"还不如原相机"里就有这一条）。该提亮的是黑毛、
+    // 逆光与弱光这些**确有需要**的场景，下面按场景/毛色单独给。
+    var shadowLift = 0.04;
     var noiseReduction = base.noiseReduction;
 
     if (scene == PetScene.backlight) {
@@ -522,23 +568,28 @@ class PetCaptureProfile {
     }
 
     // 毛色决定高光/暗部的处理侧重。
-    switch (coat) {
-      case PetCoat.white:
-        // 白毛最怕死白丢质感 → 强压高光
-        highlightRolloff += 0.15;
-        shadowLift += 0.05;
-      case PetCoat.black:
-        // 黑毛最怕糊成一团 → 强提暗部，但降 clarity 以免放大暗部噪点
-        shadowLift += 0.30;
-        noiseReduction += 0.20;
-        clarity -= 0.03;
-      case PetCoat.blueGrey:
-        // 蓝灰毛最容易"发灰显脏" → 抬高一点对比与饱和
-        clarity += 0.02;
-        saturation = saturation == 1.0 ? 1.02 : saturation;
-      case PetCoat.tabby:
-      case PetCoat.multi:
-        break; // 基准值即可
+    //
+    // 鱼没有毛色：水体色调对画面的影响远大于主体明暗，整段跳过——
+    // 否则用户在"白毛"档切到鱼时，会莫名其妙叠上一层专为白猫设计的高光策略。
+    if (species != PetSpecies.fish) {
+      switch (coat) {
+        case PetCoat.white:
+          // 白毛最怕死白丢质感 → 强压高光
+          highlightRolloff += 0.15;
+          shadowLift += 0.05;
+        case PetCoat.black:
+          // 黑毛最怕糊成一团 → 强提暗部，但降 clarity 以免放大暗部噪点
+          shadowLift += 0.30;
+          noiseReduction += 0.20;
+          clarity -= 0.03;
+        case PetCoat.blueGrey:
+          // 蓝灰毛最容易"发灰显脏" → 抬高一点对比与饱和
+          clarity += 0.02;
+          saturation = saturation == 1.0 ? 1.02 : saturation;
+        case PetCoat.tabby:
+        case PetCoat.multi:
+          break; // 基准值即可
+      }
     }
 
     // 滤镜模板：在基准之上再叠一层风格增量。
@@ -575,10 +626,17 @@ class PetCaptureProfile {
       vibrance: look.vibrance.clamp(-1.0, 1.0),
       grain: look.grain.clamp(0.0, 1.0),
       vignette: (base.vignette + look.vignette).clamp(0.0, 1.0),
-      eyeEnhance: true,
+      // 眼区增强靠"画面中上部椭圆"的廉价近似定位，而鱼缸里那个位置
+      // 正好是水面与灯管，提亮只会有害无益。（泪痕与毛发质感同理，
+      // 已在 fish 基线里关掉。）
+      eyeEnhance: species != PetSpecies.fish,
       tearStainFix: base.tearStainFix,
       furTextureBoost: base.furTextureBoost,
-      summary: '${species.label} · ${coat.label} · ${scene.label} — ${_reason(
+      // 鱼没有毛色维度，摘要里就不列它，免得显示成"鱼 · 白/奶油毛"。
+      summary:
+          '${species.label} · '
+          '${species == PetSpecies.fish ? '' : '${coat.label} · '}'
+          '${scene.label} — ${_reason(
         species: species,
         coat: coat,
         scene: scene,
@@ -603,6 +661,9 @@ class PetCaptureProfile {
         return 500; // 鼻须高频动
       case PetSpecies.chinchilla:
         return 500;
+      case PetSpecies.fish:
+        // 鱼的动作比猫更碎更快，而且轨迹不可预测；1/500 在缸内仍会糊尾。
+        return 1000;
     }
   }
 
@@ -617,7 +678,10 @@ class PetCaptureProfile {
   }) {
     final buf = StringBuffer();
     buf.write('1/$shutter s · ISO ≤$isoMax · ');
-    if (ev > 0.05) {
+    if (species == PetSpecies.fish) {
+      // 鱼的曝光不按毛色，按鱼缸整体亮度——别把"白毛"的说明套到鱼身上。
+      buf.write('曝光 +${ev.toStringAsFixed(2)}EV（按鱼缸整体亮度）');
+    } else if (ev > 0.05) {
       buf.write('曝光 +${ev.toStringAsFixed(2)}EV（${coat.label}容易被相机拍暗）');
     } else if (ev < -0.05) {
       buf.write('曝光 ${ev.toStringAsFixed(2)}EV（${coat.label}容易被相机拍亮）');

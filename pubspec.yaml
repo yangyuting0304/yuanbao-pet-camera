@@ -37,6 +37,8 @@ dependencies:
   hive_flutter: ^1.1.0
   # 拍摄照片本地持久化（原生端应用文档目录；Web 端条件导入为空实现）。
   path_provider: ^2.1.5
+  # 把成片保存到系统相册（Android MediaStore / iOS PhotoKit）。
+  gal: ^2.3.1
   # 全站备案号 Footer：点击跳转工信部备案管理系统
   url_launcher: ^6.3.0
 
