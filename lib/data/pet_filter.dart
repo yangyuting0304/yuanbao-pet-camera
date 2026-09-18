@@ -14,6 +14,7 @@
 library;
 
 import 'dart:math' as math;
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
@@ -235,19 +236,22 @@ class PetFilterKernel {
         useTexture ||
         useEye;
     final needBlur = clarity.abs() > 0.001 || noiseReduction > 0.001;
-    Float32List? luma;
+    Uint8List? luma;
     if (needLuma) {
-      luma = Float32List(n);
+      luma = Uint8List(n);
       for (var i = 0; i < n; i++) {
         final o = i * 4;
         // 用查表**之后**的亮度，保证清晰度作用在成片观感上。
+        // 量化到 8bit 存储：亮度本来就是 0~255，省下 3/4 内存。
         luma[i] =
-            0.2126 * lutR[src[o]] +
-            0.7152 * lutG[src[o + 1]] +
-            0.0722 * lutB[src[o + 2]];
+            (0.2126 * lutR[src[o]] +
+                    0.7152 * lutG[src[o + 1]] +
+                    0.0722 * lutB[src[o + 2]])
+                .round()
+                .clamp(0, 255);
       }
     }
-    Float32List? blurred;
+    Uint8List? blurred;
     if (needBlur) {
       // 半径取短边的 1.2%（至少 2px）：这是"局部对比"而不是"整体对比"。
       final radius = math.max(2, (math.min(width, height) * 0.012).round());
@@ -255,8 +259,8 @@ class PetFilterKernel {
     }
     // texture 的两个频带参考（半径固定、与尺寸无关，见常量注释）；
     // 眼睛增强的眼神光锐化复用高频参考 blurSharp。
-    Float32List? blurSharp;
-    Float32List? blurMid;
+    Uint8List? blurSharp;
+    Uint8List? blurMid;
     if (useTexture || useEye) {
       blurSharp = _boxBlur(luma!, width, height, _textureSharpRadius);
     }
@@ -466,8 +470,15 @@ class PetFilterKernel {
   /// 每趟半径按 1/√2 缩小，让"两趟后的等效半径"与调用方传入的 [radius]
   /// 基本一致——否则所有依赖模糊尺度的参数（clarity / texture）都会
   /// 在你不知情的情况下被放大 1.4 倍。
-  static Float32List _boxBlur(
-    Float32List src,
+  /// 模糊的输入/输出统一用 [Uint8List]（亮度本来就是 0~255）。
+  ///
+  /// 早先用 `Float32List`（4 字节/像素）：3000px 成片时单个缓冲就 27MB，
+  /// 而 `apply` 里同时驻留 luma + blurred + blurSharp + blurMid 四个，
+  /// 再加每趟的 tmp，峰值超过 130MB —— 这正是"拍照后闪退"的一半原因。
+  /// 换成 8bit 后降到 1/4，量化误差 ≤0.5（对 clarity/texture 的门控阈值
+  /// 6~26 而言可忽略）。**累加仍用 double**，所以精度损失只在最终存储那一步。
+  static Uint8List _boxBlur(
+    Uint8List src,
     int width,
     int height,
     int radius,
@@ -477,16 +488,16 @@ class PetFilterKernel {
     return _boxBlurPass(once, width, height, r);
   }
 
-  static Float32List _boxBlurPass(
-    Float32List src,
+  static Uint8List _boxBlurPass(
+    Uint8List src,
     int width,
     int height,
     int radius,
   ) {
     final r = radius.clamp(1, math.min(width, height) ~/ 2);
     final window = 2 * r + 1;
-    final tmp = Float32List(src.length);
-    final out = Float32List(src.length);
+    final tmp = Uint8List(src.length);
+    final out = Uint8List(src.length);
 
     // 横向
     for (var y = 0; y < height; y++) {
@@ -496,7 +507,7 @@ class PetFilterKernel {
         sum += src[row + k.clamp(0, width - 1)];
       }
       for (var x = 0; x < width; x++) {
-        tmp[row + x] = sum / window;
+        tmp[row + x] = (sum / window).round().clamp(0, 255);
         sum += src[row + (x + r + 1).clamp(0, width - 1)];
         sum -= src[row + (x - r).clamp(0, width - 1)];
       }
@@ -509,7 +520,7 @@ class PetFilterKernel {
         sum += tmp[k.clamp(0, height - 1) * width + x];
       }
       for (var y = 0; y < height; y++) {
-        out[y * width + x] = sum / window;
+        out[y * width + x] = (sum / window).round().clamp(0, 255);
         sum += tmp[(y + r + 1).clamp(0, height - 1) * width + x];
         sum -= tmp[(y - r).clamp(0, height - 1) * width + x];
       }
@@ -557,6 +568,18 @@ Uint8List encodeJpegFromRgba((Uint8List, int, int) args) {
     order: img.ChannelOrder.rgba,
   );
   return img.encodeJpg(image, quality: PetFilter.defaultJpegQuality);
+}
+
+/// 与 [encodeJpegFromRgba] 相同的编码，但接收**移交所有权**的像素数据。
+///
+/// 为什么单开一个：`compute` 默认会把参数**复制**一份送进 isolate，
+/// 6.75M 像素（3000px 成片）就是 27MB 的额外峰值——而这一步正处在
+/// 拍照链路的尾端，前面刚经历过融合与滤镜，内存余量最紧张。
+/// [TransferableTypedData] 是零拷贝移交，代价是源缓冲在移交后即失效
+/// （调用方本来也不再需要它）。
+Uint8List encodeJpegFromTransferable((TransferableTypedData, int, int) args) {
+  final (data, width, height) = args;
+  return encodeJpegFromRgba((data.materialize().asUint8List(), width, height));
 }
 
 /// 滤镜的顶层执行入口，供 `compute` 调用。

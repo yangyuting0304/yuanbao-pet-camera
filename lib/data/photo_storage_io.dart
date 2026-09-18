@@ -54,10 +54,13 @@ Future<String?> save(Uint8List bytes, {DateTime? takenAt}) async {
 Future<void> delete(DateTime takenAt) async {
   try {
     final dir = await _photosDir();
+    // 顺序：**先删短片，再删照片**。
+    // 反过来的话，若在这两步之间进程被杀，会留下一段永远访问不到的孤儿
+    // mp4（占空间且无人回收）；而先删短片最坏只是照片的 livePath 落空，
+    // loadAll 会判为 null，用户看到一张普通照片而已。
+    await deleteLive(takenAt);
     final file = _photoFile(dir, takenAt);
     if (file.existsSync()) await file.delete();
-    // 动态短片随照片一起删，避免留下永远访问不到的孤儿文件占空间。
-    await deleteLive(takenAt);
   } catch (_) {
     // 删除失败静默：照片可能本就没落盘（如 Web 端或权限异常）。
   }
@@ -134,6 +137,10 @@ Future<void> clearAll() async {
     if (!dir.existsSync()) return;
     await for (final entity in dir.list()) {
       if (entity is File) {
+        // 屏蔽表**不是**照片缓存：它记录"用户主动删掉的云端照片"。
+        // 清相册缓存时若把它一并删掉，那些被删的云端照片会在下次启动
+        // 全部复活——等于静默撤销了用户的删除操作。必须跳过。
+        if (entity.uri.pathSegments.last == _hiddenFile) continue;
         try {
           await entity.delete();
         } catch (_) {

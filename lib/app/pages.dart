@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:camera/camera.dart';
@@ -1405,6 +1406,8 @@ class _CameraPageState extends ConsumerState<CameraPage> {
   bool _liveRecording = false;
   /// 已请求提前收尾：用户按下快门要抢相机，录制循环见到此标志立刻结束。
   bool _liveAbort = false;
+  /// 快门去重标志：连点快门时只放行一次拍照（见 [_capture]）。
+  bool _capturing = false;
 
   // ───────────── 切片A：画质地基 ─────────────
   /// 拍摄画质档位（原生走 max，网页自动降一档）。
@@ -1526,7 +1529,8 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         return;
       }
       _cameraIndex = _findCameraIndex(CameraLensDirection.back);
-      await _setupController(_cameras[_cameraIndex]);
+      // 显式传音频轨：冷启动这条路径若漏传，第一张动态照片会是无声的。
+      await _setupController(_cameras[_cameraIndex], enableAudio: true);
     } on TimeoutException {
       setState(() => _error = '相机加载超时，请检查浏览器相机权限后重试');
     } catch (e) {
@@ -1536,7 +1540,14 @@ class _CameraPageState extends ConsumerState<CameraPage> {
 
   Future<void> _setupController(
     CameraDescription desc, {
-    bool enableAudio = false,
+    // 默认开：动态照片要录环境声（对齐 iOS 实况照片）。
+    //
+    // 注意它**不决定能否录制**——camera_android_camerax 的 VideoCapture 是
+    // 首次调用 startVideoRecording 时才懒绑定的。它只决定两件事：
+    //   ① 录制是否带音轨   ② 建控制器时是否请求麦克风权限
+    // 默认 true 是为了防漏传：漏传的后果是"动态照片没声音"，属于静默降级，
+    // 很难在测试中被发现。
+    bool enableAudio = true,
   }) async {
     final previousController = _controller;
     // 关键顺序：先彻底释放旧控制器，再创建新的。
@@ -1778,16 +1789,21 @@ class _CameraPageState extends ConsumerState<CameraPage> {
   /// 分辨率只能在创建 [CameraController] 时指定，所以改档位必须重建控制器。
   Future<void> _changeQuality(CaptureQuality quality) async {
     if (quality == _quality || _recording || _cameras.isEmpty) return;
+    // 动态短片正在录：先让它收尾再重建控制器。否则旧控制器被 dispose 后，
+    // 录制会在它身上抛异常，这一张的动态就白录了（照片本身不受影响）。
+    await _stopLiveClipEarly();
     _quality = quality;
     if (mounted) setState(() {});
     await _setupController(
       _cameras[_cameraIndex],
-      // 动态照片需要 VideoCapture 用例，而用例只能在 initialize 时确定、
-      // 无法事后追加，所以拍照/视频模式**恒开音频轨**（不录制时无额外开销），
-      // 换来"随时打开动态照片都能立刻用、不必重建控制器"。
-      // 宠物模式（2）保持关闭：CameraX 下 VideoCapture 与 ImageAnalysis
-      // （实时跟踪用的图像流）互斥，只能取其一——宠物模式保跟踪。
-      enableAudio: _modeIndex != 2,
+      // 恒开音频轨：动态照片要录下环境声（对齐 iOS 实况照片），而音轨只能
+      // 在 initialize 时确定。
+      //
+      // 注意**不是**为了"绑定 VideoCapture 用例"——camera_android_camerax 的
+      // VideoCapture 是首次调用 startVideoRecording 时才懒绑定的，
+      // enableAudio 并不决定能否录制，它只决定两件事：
+      //   ① 录制是否带音轨   ② 建控制器时是否请求麦克风权限
+      enableAudio: true,
     );
   }
 
@@ -1851,7 +1867,7 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     // 否则越靠画面边缘的点偏移越大。
     final originX = (viewport.width - scaledPreview.width) / 2;
     final originY = (viewport.height - scaledPreview.height) / 2;
-    final nx = ((localPosition.dx - originX) / scaledPreview.width).clamp(
+    var nx = ((localPosition.dx - originX) / scaledPreview.width).clamp(
       0.0,
       1.0,
     );
@@ -1859,6 +1875,13 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       0.0,
       1.0,
     );
+    // 前置摄像头预览是镜像显示的：屏幕左边对应传感器右边，不翻转的话
+    // 对焦点会落到点击位置的镜像一侧（后置不受影响）。
+    // 若真机验证发现前置左右仍相反，删掉这一段即可。
+    final isFront =
+        _cameraIndex < _cameras.length &&
+        _cameras[_cameraIndex].lensDirection == CameraLensDirection.front;
+    if (isFront) nx = 1.0 - nx;
     if (mounted) {
       setState(() {
         _focusTapLocal = localPosition;
@@ -2167,17 +2190,17 @@ class _CameraPageState extends ConsumerState<CameraPage> {
 
   Future<void> _switchLens() async {
     if (_cameras.length < 2 || _recording) return;
+    // 动态短片正在录：先收尾再重建控制器，否则录制会落在被 dispose 的
+    // 旧控制器上而抛异常，丢掉这一张的动态。
+    await _stopLiveClipEarly();
     _cameraIndex = (_cameraIndex + 1) % _cameras.length;
     // 换镜头后原来的对焦点与缩放不再适用，先复位再重建控制器。
     _resetFocusAndZoom();
     await _setupController(
       _cameras[_cameraIndex],
-      // 动态照片需要 VideoCapture 用例，而用例只能在 initialize 时确定、
-      // 无法事后追加，所以拍照/视频模式**恒开音频轨**（不录制时无额外开销），
-      // 换来"随时打开动态照片都能立刻用、不必重建控制器"。
-      // 宠物模式（2）保持关闭：CameraX 下 VideoCapture 与 ImageAnalysis
-      // （实时跟踪用的图像流）互斥，只能取其一——宠物模式保跟踪。
-      enableAudio: _modeIndex != 2,
+      // 恒开音频轨（动态照片录环境声）。含义与"能否录制"无关，
+      // 详见 _changeQuality 的说明。
+      enableAudio: true,
     );
   }
 
@@ -2213,22 +2236,44 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       await _toggleRecording();
       return;
     }
-    // 动态短片正在录：先让它提前收尾，把相机让给拍照。
-    await _stopLiveClipEarly();
-    await _takePicture();
+    // 快门去重：快门挂在 onTapDown 上，连点会让两次连拍在同一控制器上
+    // 交错——轻则串帧，重则 takePicture 抛异常把照片丢掉。
+    if (_capturing) return;
+    _capturing = true;
+    try {
+      // 动态短片正在录：先让它提前收尾，把相机让给拍照。
+      if (!await _stopLiveClipEarly()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('上一段动态正在收尾，请稍候再拍'),
+              duration: Duration(seconds: 1),
+            ),
+          );
+        }
+        return;
+      }
+      await _takePicture();
+    } finally {
+      _capturing = false;
+    }
   }
 
   /// 请求正在录制的动态短片提前收尾，并**等它真正停止**。
   ///
-  /// 必须等：CameraX 同一时刻只接受一个采集请求，硬抢会让 takePicture
-  /// 直接失败——那意味着"照片丢了"，比没有动态照片严重得多。
+  /// 返回 true = 相机已让出来（可以拍照）；false = 等超时了它还没停。
+  ///
+  /// 为什么必须等：CameraX 同一时刻只接受一个采集请求，硬抢会让
+  /// takePicture 直接失败——那意味着"照片丢了"，比没有动态照片严重得多。
+  /// 所以超时宁可**放弃这次拍照**并明确告诉用户，也不去赌。
   /// 录制循环每 20ms 检查一次 [_liveAbort]，正常在 100ms 内收尾。
-  Future<void> _stopLiveClipEarly() async {
-    if (!_liveRecording) return;
+  Future<bool> _stopLiveClipEarly() async {
+    if (!_liveRecording) return true;
     _liveAbort = true;
     for (var i = 0; i < 25 && _liveRecording; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
+    return !_liveRecording;
   }
 
   /// 动态照片：拍照完成后自动录一小段短片，关联到刚拍的那张照片。
@@ -2441,9 +2486,14 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       if (rgba == null) return bytes;
       // 输出 JPEG 而非 PNG：PNG 无损会把 12MP 成片撑到十几 MB，
       // 且此前一直以 ext:'jpg' 上传，扩展名与实际编码不符。
+      //
+      // 用 TransferableTypedData **移交**像素，而不是直接传 Uint8List：
+      // 后者会被 compute 复制一份（3000px 就是 27MB），而这一步已在拍照
+      // 链路的尾端、内存余量最小。移交后本地 rgba 即失效——这里本来
+      // 也不再读它。
       return await compute(
-        encodeJpegFromRgba,
-        (rgba, outputWidth, outputHeight),
+        encodeJpegFromTransferable,
+        (TransferableTypedData.fromList([rgba]), outputWidth, outputHeight),
       );
     } catch (e) {
       debugPrint('[比例合成] 失败，改用原图：$e');
@@ -2509,13 +2559,18 @@ class _CameraPageState extends ConsumerState<CameraPage> {
   /// 切换拍照/视频/宠物模式；进入视频模式时重建控制器以开启音频轨。
   Future<void> _switchMode(int i) async {
     if (i == _modeIndex || _recording || _cameras.isEmpty) return;
+    // 动态短片正在录：先收尾再重建控制器，否则录制会落在被 dispose 的
+    // 旧控制器上抛异常，丢掉这一张的动态。
+    await _stopLiveClipEarly();
     // 切模式会重建控制器，对焦点与缩放先复位。
     _resetFocusAndZoom();
     setState(() {
       _modeIndex = i;
       _audioUnsupported = false;
     });
-    await _setupController(_cameras[_cameraIndex], enableAudio: i == 1);
+    // 恒开音频轨（含义见 _setupController 的注释）。音频轨与"能否录制"无关，
+    // 「宠物模式不录动态」是由 _takePicture 单独判断的。
+    await _setupController(_cameras[_cameraIndex], enableAudio: true);
     // 进入宠物模式时自动识别一次——这才叫"打开相机就能拍"，
     // 而不是"打开相机先选四个维度"。整个会话只自动跑一次，
     // 之后由用户点按钮手动重跑。
@@ -2799,6 +2854,10 @@ class _CameraPageState extends ConsumerState<CameraPage> {
 
   @override
   void dispose() {
+    // 动态短片还在录时通知它立刻收尾：否则录制循环会一直跑到 2 秒 deadline
+    // 才去 stopVideoRecording，而那时控制器已经释放——异常虽被吞掉不会崩，
+    // 但白白多占用两秒、并可能残留一个临时文件。
+    _liveAbort = true;
     // 先停图像流再释放控制器：某些机型上直接 dispose 会让帧回调留在原地跑，
     // 而回调里还会去碰已释放的会话。
     final c = _controller;
@@ -3182,17 +3241,23 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         final displayHeight = isViewportPortrait == isPreviewPortrait
             ? previewSize.height
             : previewSize.width;
-        // cover 铺满视口：**用尺寸比，不是宽高比之比**。
+        // cover 铺满视口：**先算好最终绘制尺寸，再用 OverflowBox 解除约束**。
         //
-        // 早先写的是 previewAspect / viewportAspect（0.5625 / 0.5 = 1.125），
-        // 但那只是"两个比例相除"，与"把 1080px 宽的预览塞进 400px 视口"
-        // 真正需要的 0.417 差了近 3 倍——预览因此被整体放大 2.7 倍：
-        // 视野只剩中间一小块、画面发糊。用户反馈的"视野比系统相机窄、
-        // 看着失真"正是这个。正确做法是取宽/高两个方向缩放比的较大者。
+        // 这里的坑在于约束传递：`Center > SizedBox(displayW x displayH) >
+        // CameraPreview` 这条链里，SizedBox 会被父级（视口尺寸的 tight 约束）
+        // 直接压扁，CameraPreview 内部的 AspectRatio 再退一步收缩——于是
+        // Transform.scale 实际作用在"已经缩到视口内"的尺寸上。缩放系数小于 1
+        // 时，画面就不进反退，缩成屏幕中间一小块（实拍反馈过）。
+        //
+        // 所以既不用 Transform.scale，也不依赖 SizedBox 的原始尺寸：
+        // 直接算出 drawW x drawH 让 SizedBox 一步到位，OverflowBox 放开父约束
+        // 允许它超出视口，最后交给 ClipRect 裁掉溢出——这正是 cover 的定义。
         final scale = math.max(
           constraints.maxWidth / displayWidth,
           constraints.maxHeight / displayHeight,
         );
+        final drawWidth = displayWidth * scale;
+        final drawHeight = displayHeight * scale;
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           // 切片C：点按 = 对焦 + 测光；双指 = 缩放。
@@ -3200,20 +3265,20 @@ class _CameraPageState extends ConsumerState<CameraPage> {
           onTapDown: (d) => _handleTapToFocus(
             d.localPosition,
             Size(constraints.maxWidth, constraints.maxHeight),
-            Size(displayWidth * scale, displayHeight * scale),
+            Size(drawWidth, drawHeight),
           ),
           onScaleStart: (_) => _zoomAtGestureStart = _zoom,
           onScaleUpdate: _handleZoomUpdate,
           child: ClipRect(
-            child: Transform.scale(
-              scale: scale,
-              alignment: Alignment.center,
-              child: Center(
-                child: SizedBox(
-                  width: displayWidth,
-                  height: displayHeight,
-                  child: CameraPreview(_controller!),
-                ),
+            child: OverflowBox(
+              // 放开约束：cover 的本质就是"放大到铺满 + 裁掉溢出部分"，
+              // 不允许溢出就永远铺不满。
+              maxWidth: drawWidth,
+              maxHeight: drawHeight,
+              child: SizedBox(
+                width: drawWidth,
+                height: drawHeight,
+                child: CameraPreview(_controller!),
               ),
             ),
           ),
@@ -6423,6 +6488,14 @@ class _PhotoDialogState extends ConsumerState<_PhotoDialog> {
     );
   }
 
+  /// 播放动态照片（详情页里的显式入口，与网格长按共用同一个播放弹窗）。
+  void _playLive() {
+    showDialog<void>(
+      context: context,
+      builder: (_) => _LivePhotoPlayerDialog(item: widget.item),
+    );
+  }
+
   /// 删除这张照片（二次确认）。
   ///
   /// 两条路径：
@@ -6493,15 +6566,48 @@ class _PhotoDialogState extends ConsumerState<_PhotoDialog> {
                 maxHeight: media.height * 0.68,
                 maxWidth: media.width,
               ),
-              child: InteractiveViewer(
-                minScale: 1,
-                maxScale: 6,
-                clipBehavior: Clip.hardEdge,
-                child: Image(
-                  image: widget.item.image,
-                  fit: BoxFit.contain,
-                  filterQuality: FilterQuality.medium,
-                ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  InteractiveViewer(
+                    minScale: 1,
+                    maxScale: 6,
+                    clipBehavior: Clip.hardEdge,
+                    child: Image(
+                      image: widget.item.image,
+                      fit: BoxFit.contain,
+                      filterQuality: FilterQuality.medium,
+                    ),
+                  ),
+                  if (widget.item.hasLive) ...[
+                    // 角标只作标识，用 IgnorePointer 让它不拦手势，
+                    // 否则会挡住双指缩放。
+                    const Positioned(
+                      top: 10,
+                      left: 10,
+                      child: IgnorePointer(child: _LiveBadge()),
+                    ),
+                    // 中央播放按钮：网格里的"长按播放"是隐藏操作，
+                    // 详情页必须给一个看得见的入口，否则用户根本不知道
+                    // 这张照片还能动。
+                    GestureDetector(
+                      onTap: _playLive,
+                      child: Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.42),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.play_arrow_rounded,
+                          color: Colors.white,
+                          size: 34,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
             Container(

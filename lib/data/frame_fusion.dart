@@ -204,31 +204,44 @@ Uint8List fuseFrames(FusionRequest req) {
   if (frames.isEmpty) return Uint8List(0);
   if (frames.length == 1) return frames.first;
 
-  final decoded = <img.Image>[];
+  // **逐帧解码 → 提取平面/灰度 → 立刻释放**。
+  //
+  // 不能"先把五帧全解码、再统一尺寸"：`decodeImage` 是全尺寸解码，
+  // 相机原图 4000×3000 时单帧就占约 48MB，五帧 240MB —— 与后面的融合
+  // 平面叠加足以顶穿进程内存上限（实拍反馈的"拍照后闪退"就是它）。
+  // 改成流式之后，任意时刻只驻留一帧位图。
+  img.Image? first;
   for (final bytes in frames) {
     try {
-      final one = img.decodeImage(bytes);
-      if (one != null) decoded.add(one);
+      first = img.decodeImage(bytes);
+      if (first != null) break;
     } catch (_) {
       // 单帧解码失败就跳过它，其余帧照常融合。
     }
   }
-  if (decoded.isEmpty) return frames.first;
-  if (decoded.length == 1) {
-    return img.encodeJpg(decoded.first, quality: req.jpegQuality);
-  }
+  if (first == null) return frames.first;
 
   // 统一尺寸：以第一帧为准，其余帧缩到同尺寸才能逐像素融合。
-  final longSide = math.max(decoded[0].width, decoded[0].height);
+  final longSide = math.max(first.width, first.height);
   final scale = req.maxSide > 0 && longSide > req.maxSide
       ? req.maxSide / longSide
       : 1.0;
-  final targetW = (decoded[0].width * scale).round();
-  final targetH = (decoded[0].height * scale).round();
-  if (targetW < 8 || targetH < 8) return frames.first;
+  final targetW = (first.width * scale).round();
+  final targetH = (first.height * scale).round();
+  if (targetW < 8 || targetH < 8) {
+    first.clear();
+    return frames.first;
+  }
 
+  // 灰度图只有原图的 1/64，在这里就一起算出来——这样不必为了"稍后对齐"
+  // 而把整幅位图留到最后，是流式处理能成立的关键。
+  final grayW = math.max(8, targetW ~/ 8);
+  final grayH = math.max(8, targetH ~/ 8);
   final planes = <Uint8List>[];
-  for (final one in decoded) {
+  final grays = <Uint8List>[];
+
+  /// 收下一帧：转尺寸 → 取 RGBA 平面 → 取灰度；调用方随即释放该位图。
+  void absorb(img.Image one) {
     final sized = (one.width == targetW && one.height == targetH)
         ? one
         : img.copyResize(
@@ -238,17 +251,35 @@ Uint8List fuseFrames(FusionRequest req) {
             interpolation: img.Interpolation.average,
           );
     planes.add(sized.getBytes(order: img.ChannelOrder.rgba));
+    grays.add(_graySmall(sized, grayW, grayH));
   }
 
-  // 对齐：把每帧相对参考帧的平移量找出来。
-  final grayW = math.max(8, targetW ~/ 8);
-  final grayH = math.max(8, targetH ~/ 8);
-  final refGray = _graySmall(decoded[0], grayW, grayH);
+  absorb(first);
+  first.clear(); // 显式清掉像素，不等 GC——这里是内存峰值的关键路径。
+  first = null;
+
+  for (var i = 1; i < frames.length; i++) {
+    img.Image? one;
+    try {
+      one = img.decodeImage(frames[i]);
+    } catch (_) {
+      one = null;
+    }
+    // 坏帧直接跳过：planes / grays / shifts 三者下标仍一一对应。
+    if (one == null) continue;
+    absorb(one);
+    one.clear();
+  }
+
+  if (planes.isEmpty) return frames.first;
+  // 只剩一帧可用时不重编码：原图字节就是最好的结果，还省一次全尺寸编码。
+  if (planes.length == 1) return frames.first;
+
+  // 对齐：每帧相对参考帧的平移量。灰度图已备好，不必再解位图。
+  final refGray = grays.first;
   final shifts = <({int dx, int dy})>[const (dx: 0, dy: 0)];
-  for (var i = 1; i < decoded.length; i++) {
-    shifts.add(
-      _estimateShift(refGray, _graySmall(decoded[i], grayW, grayH), grayW, grayH),
-    );
+  for (var i = 1; i < grays.length; i++) {
+    shifts.add(_estimateShift(refGray, grays[i], grayW, grayH));
   }
   // 灰度图上的位移量要放回原尺寸。
   final scaleBack = targetW / grayW;
