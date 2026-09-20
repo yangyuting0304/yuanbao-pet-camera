@@ -1529,8 +1529,11 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         return;
       }
       _cameraIndex = _findCameraIndex(CameraLensDirection.back);
-      // 显式传音频轨：冷启动这条路径若漏传，第一张动态照片会是无声的。
-      await _setupController(_cameras[_cameraIndex], enableAudio: true);
+      // 拍照模式要录动态照片的环境声；宠物模式绝不能开（见 _setupController）。
+      await _setupController(
+        _cameras[_cameraIndex],
+        enableAudio: _modeIndex != 2,
+      );
     } on TimeoutException {
       setState(() => _error = '相机加载超时，请检查浏览器相机权限后重试');
     } catch (e) {
@@ -1540,14 +1543,16 @@ class _CameraPageState extends ConsumerState<CameraPage> {
 
   Future<void> _setupController(
     CameraDescription desc, {
-    // 默认开：动态照片要录环境声（对齐 iOS 实况照片）。
+    // **默认 false，每个调用点必须自己声明。**
     //
-    // 注意它**不决定能否录制**——camera_android_camerax 的 VideoCapture 是
-    // 首次调用 startVideoRecording 时才懒绑定的。它只决定两件事：
-    //   ① 录制是否带音轨   ② 建控制器时是否请求麦克风权限
-    // 默认 true 是为了防漏传：漏传的后果是"动态照片没声音"，属于静默降级，
-    // 很难在测试中被发现。
-    bool enableAudio = true,
+    // 这个参数只决定两件事：① 录制是否带音轨 ② 建控制器时是否请求麦克风权限
+    // （它并**不决定能否录制**——camera_android_camerax 的 VideoCapture 是首次
+    // 调用 startVideoRecording 时才懒绑定的）。
+    //
+    // 正因为作用隐蔽，之前把它设成过 true 的默认值，结果宠物模式也带上了
+    // 音频轨，而 CameraX 下 VideoCapture 与宠物跟踪用的 ImageAnalysis 互斥——
+    // 实拍表现就是「一切到宠物模式立刻闪退」。改回必须显式声明，避免再被隐式带偏。
+    bool enableAudio = false,
   }) async {
     final previousController = _controller;
     // 关键顺序：先彻底释放旧控制器，再创建新的。
@@ -1803,7 +1808,10 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       // VideoCapture 是首次调用 startVideoRecording 时才懒绑定的，
       // enableAudio 并不决定能否录制，它只决定两件事：
       //   ① 录制是否带音轨   ② 建控制器时是否请求麦克风权限
-      enableAudio: true,
+      //
+      // 宠物模式必须关（`_modeIndex != 2`）：CameraX 的 VideoCapture 与宠物
+      // 跟踪用的 ImageAnalysis 互斥，带上音频轨会直接闪退。
+      enableAudio: _modeIndex != 2,
     );
   }
 
@@ -1986,6 +1994,15 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       await _controller?.stopImageStream();
     } catch (_) {}
     _streaming = false;
+    // 等正在进行的这一次推理跑完再返回。
+    //
+    // 停流只是不再产生新帧，但可能已经有一帧正在 TFLite 里跑：那一次推理
+    // 自己占着解释器与中间张量，与紧接着的连拍/融合叠加，会在内存紧张的
+    // 机型上顶穿进程上限——宠物模式拍照比普通模式更容易闪退，差别就在这里。
+    // 最多等 1 秒，超时也放行：宁可冒内存风险，也不能让快门卡死。
+    for (var i = 0; i < 50 && _detecting; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
     return true;
   }
 
@@ -2198,9 +2215,9 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     _resetFocusAndZoom();
     await _setupController(
       _cameras[_cameraIndex],
-      // 恒开音频轨（动态照片录环境声）。含义与"能否录制"无关，
-      // 详见 _changeQuality 的说明。
-      enableAudio: true,
+      // 宠物模式必须关音频轨（原因见 _changeQuality 的说明）；
+      // 其余模式开，供动态照片录下环境声。
+      enableAudio: _modeIndex != 2,
     );
   }
 
@@ -2568,9 +2585,10 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       _modeIndex = i;
       _audioUnsupported = false;
     });
-    // 恒开音频轨（含义见 _setupController 的注释）。音频轨与"能否录制"无关，
-    // 「宠物模式不录动态」是由 _takePicture 单独判断的。
-    await _setupController(_cameras[_cameraIndex], enableAudio: true);
+    // 宠物模式（2）**必须关闭音频轨**：CameraX 下 VideoCapture 与宠物跟踪用的
+    // ImageAnalysis 互斥，带上音频轨会让切进宠物模式直接闪退（实拍反馈）。
+    // 它也不需要音轨——宠物模式不录动态照片（见 _takePicture 里的判断）。
+    await _setupController(_cameras[_cameraIndex], enableAudio: i != 2);
     // 进入宠物模式时自动识别一次——这才叫"打开相机就能拍"，
     // 而不是"打开相机先选四个维度"。整个会话只自动跑一次，
     // 之后由用户点按钮手动重跑。
