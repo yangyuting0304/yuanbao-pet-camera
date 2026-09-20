@@ -14,8 +14,22 @@ android/local.properties
 android/app/.cxx/
 android/*.iml
 
-# iOS 目录由 Mac 侧 flutter create 生成后再入库
-ios/
+# iOS：工程入库（云端构建需要），只忽略生成物
+ios/.symlinks/
+ios/Pods/
+ios/.build/
+ios/Flutter/ephemeral/
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+ios/Flutter/App.framework
+ios/Flutter/Flutter.framework
+ios/Flutter/flutter_assets/
+ios/Flutter/.last_build_id
+ios/ServiceDefinitions.json
+ios/Runner/GeneratedPluginRegistrant.*
+**/xcuserdata/
+**/*.xcuserstate
 
 # 临时脚手架（README_build.md 工具链生成物，不入库）
 _scaffold/
@@ -45,3 +59,4 @@ _diag*.png
 
 # 云函数依赖（部署时 npm install）
 cloud_functions/node_modules/
+.DS_Store
