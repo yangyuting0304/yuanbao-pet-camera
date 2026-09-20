@@ -1,4 +1,4 @@
-package com.yuanbao.u_scaffold
+package com.yuanbao.petcamera
 
 import io.flutter.embedding.android.FlutterActivity
 

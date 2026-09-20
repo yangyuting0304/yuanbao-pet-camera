@@ -5,7 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.yuanbao.u_scaffold"
+    // 正式包名（此前是从脚手架带过来的 com.yuanbao.u_scaffold）。
+    // Android 约定全小写：大写字母虽然技术上可行，但 Play 商店与部分工具会
+    // 警告或拒绝，因此统一为全小写。iOS 侧的 bundle id 是独立的，
+    // 目前为 com.yuanbao.petCamera（Apple 允许大写，两者不必一致）。
+    namespace = "com.yuanbao.petcamera"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -15,8 +19,8 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.yuanbao.u_scaffold"
+        // 正式 applicationId（此前是脚手架遗留的 com.yuanbao.u_scaffold）。
+        applicationId = "com.yuanbao.petcamera"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
