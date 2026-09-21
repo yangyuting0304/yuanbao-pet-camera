@@ -60,3 +60,6 @@ _diag*.png
 # 云函数依赖（部署时 npm install）
 cloud_functions/node_modules/
 .DS_Store
+
+# dist/ 只保留说明文档；APK 体积大且每次构建都变，改走 GitHub Release 或网盘分发（见 dist/README.md）
+dist/*.apk
