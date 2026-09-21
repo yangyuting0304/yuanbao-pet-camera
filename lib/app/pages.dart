@@ -1408,6 +1408,8 @@ class _CameraPageState extends ConsumerState<CameraPage> {
   bool _liveAbort = false;
   /// 快门去重标志：连点快门时只放行一次拍照（见 [_capture]）。
   bool _capturing = false;
+  /// 本次拍照的开始时刻，供 [_capture] 的看门狗判断是否已卡死。
+  DateTime? _capturingSince;
 
   // ───────────── 切片A：画质地基 ─────────────
   /// 拍摄画质档位（原生走 max，网页自动降一档）。
@@ -1529,10 +1531,15 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         return;
       }
       _cameraIndex = _findCameraIndex(CameraLensDirection.back);
-      // 拍照模式要录动态照片的环境声；宠物模式绝不能开（见 _setupController）。
+      // **音频轨仅在视频模式下开启**（这是改坏之前的原配置）。
+      //
+      // 背景：为了给动态照片录环境声，曾把它扩到"非宠物模式即开"甚至全开，
+      // 但真机接连出问题——宠物模式闪退（VideoCapture 与 ImageAnalysis 互斥）、
+      // 拍照模式快门无响应。动态照片没声音只是体验打折，相机不能用是功能报废，
+      // 所以先退回最小配置；等确认稳定后再单独评估动态照片的音频方案。
       await _setupController(
         _cameras[_cameraIndex],
-        enableAudio: _modeIndex != 2,
+        enableAudio: _modeIndex == 1,
       );
     } on TimeoutException {
       setState(() => _error = '相机加载超时，请检查浏览器相机权限后重试');
@@ -1809,9 +1816,8 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       // enableAudio 并不决定能否录制，它只决定两件事：
       //   ① 录制是否带音轨   ② 建控制器时是否请求麦克风权限
       //
-      // 宠物模式必须关（`_modeIndex != 2`）：CameraX 的 VideoCapture 与宠物
-      // 跟踪用的 ImageAnalysis 互斥，带上音频轨会直接闪退。
-      enableAudio: _modeIndex != 2,
+      // 仅在视频模式开启（原配置），原因见 _initCamera 的说明。
+      enableAudio: _modeIndex == 1,
     );
   }
 
@@ -2120,7 +2126,12 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     final count = _burstShots.count;
     final shots = <Uint8List>[];
     for (var i = 0; i < count; i++) {
-      final shot = await _controller!.takePicture();
+      // 单张加超时：相机处于异常状态时 takePicture 可能**永久不返回**，
+      // 会把整条拍照链路连同快门标志一起挂死（实拍反馈的"点了没反应"）。
+      // 超时抛出的异常由 _takePicture 统一兜住并提示用户，快门随即恢复可用。
+      final shot = await _controller!
+          .takePicture()
+          .timeout(const Duration(seconds: 8));
       shots.add(await shot.readAsBytes());
     }
     return shots;
@@ -2215,9 +2226,8 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     _resetFocusAndZoom();
     await _setupController(
       _cameras[_cameraIndex],
-      // 宠物模式必须关音频轨（原因见 _changeQuality 的说明）；
-      // 其余模式开，供动态照片录下环境声。
-      enableAudio: _modeIndex != 2,
+      // 仅在视频模式开启（原因见 _initCamera 的说明）。
+      enableAudio: _modeIndex == 1,
     );
   }
 
@@ -2255,8 +2265,19 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     }
     // 快门去重：快门挂在 onTapDown 上，连点会让两次连拍在同一控制器上
     // 交错——轻则串帧，重则 takePicture 抛异常把照片丢掉。
-    if (_capturing) return;
+    //
+    // 看门狗：去重本身有风险——底层 takePicture 一旦永久挂起（相机异常时
+    // 并不罕见），这个标志会永远是 true，表现就是「快门彻底没反应」
+    // （实拍反馈过）。超过 30 秒强制复位：宁可偶发重入，
+    // 也不能让用户永久失去快门。
+    final now = DateTime.now();
+    if (_capturing) {
+      final since = _capturingSince;
+      if (since != null && now.difference(since).inSeconds < 30) return;
+      debugPrint('[快门] 上一次拍照超过 30 秒未结束，强制复位');
+    }
     _capturing = true;
+    _capturingSince = now;
     try {
       // 动态短片正在录：先让它提前收尾，把相机让给拍照。
       if (!await _stopLiveClipEarly()) {
@@ -2273,6 +2294,7 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       await _takePicture();
     } finally {
       _capturing = false;
+      _capturingSince = null;
     }
   }
 
@@ -2585,10 +2607,8 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       _modeIndex = i;
       _audioUnsupported = false;
     });
-    // 宠物模式（2）**必须关闭音频轨**：CameraX 下 VideoCapture 与宠物跟踪用的
-    // ImageAnalysis 互斥，带上音频轨会让切进宠物模式直接闪退（实拍反馈）。
-    // 它也不需要音轨——宠物模式不录动态照片（见 _takePicture 里的判断）。
-    await _setupController(_cameras[_cameraIndex], enableAudio: i != 2);
+    // 仅在视频模式开启音频轨（原因见 _initCamera 的说明）。
+    await _setupController(_cameras[_cameraIndex], enableAudio: i == 1);
     // 进入宠物模式时自动识别一次——这才叫"打开相机就能拍"，
     // 而不是"打开相机先选四个维度"。整个会话只自动跑一次，
     // 之后由用户点按钮手动重跑。
