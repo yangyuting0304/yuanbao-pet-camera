@@ -35,9 +35,14 @@ class PetFilterKernel {
   static const double _shadowKnee = 0.35;
 
   /// 微对比强度系数。把 profile 里的 `clarity`（0.12~0.28）映射成
-  /// unsharp mask 的合理 amount（约 0.5~1.1）——宠物毛发要的是"根根分明"，
-  /// 不是"刀锋般锐利"，所以上限刻意压得低。
-  static const double _clarityScale = 4.0;
+  /// unsharp mask 的合理 amount（约 0.3~0.7）——宠物毛发要的是"根根分明"，
+  /// 不是"刀锋般锐利"。
+  ///
+  /// 早先是 4.0（amount 可到 1.1+）：在二十多像素的大半径上叠加这么高的量，
+  /// 会在毛边与背景交界处出现肉眼可见的**白边光晕**（伪轮廓），
+  /// 观感"假"、正是专业调色里最忌讳的过冲。降到 2.5 后光晕消失，
+  /// 立体感仍由 texture（中频）与降噪共同支撑。
+  static const double _clarityScale = 2.5;
 
   /// 毛发质感（texture）的两个频带半径（像素，**与图片尺寸无关**）。
   ///
@@ -253,8 +258,10 @@ class PetFilterKernel {
     }
     Uint8List? blurred;
     if (needBlur) {
-      // 半径取短边的 1.2%（至少 2px）：这是"局部对比"而不是"整体对比"。
-      final radius = math.max(2, (math.min(width, height) * 0.012).round());
+      // 半径取短边的 0.8%（至少 2px）：这是"局部对比"而不是"整体对比"。
+      // 早先用 1.2%——3000px 成片下半径达 27px，与 clarity 的放大量叠加会
+      // 在轮廓外形成光晕。收窄后对比更"贴肉"，也更不容易出白边。
+      final radius = math.max(2, (math.min(width, height) * 0.008).round());
       blurred = _boxBlur(luma!, width, height, radius);
     }
     // texture 的两个频带参考（半径固定、与尺寸无关，见常量注释）；

@@ -1410,6 +1410,9 @@ class _CameraPageState extends ConsumerState<CameraPage> {
   bool _capturing = false;
   /// 本次拍照的开始时刻，供 [_capture] 的看门狗判断是否已卡死。
   DateTime? _capturingSince;
+  /// 相机控制器重建中。防止连点切模式/镜头/画质触发并发重建
+  /// （见 [_setupController]）。
+  bool _switching = false;
 
   // ───────────── 切片A：画质地基 ─────────────
   /// 拍摄画质档位（原生走 max，网页自动降一档）。
@@ -1548,7 +1551,31 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     }
   }
 
+  /// 重建相机控制器（**带重入保护**）。
+  ///
+  /// 重入保护是必需的：连点底部模式胶囊 / 镜头键 / 画质档时，两次调用会并发
+  /// 执行——两边各自把 `_controller` 置 null、各自 dispose 旧控制器、各自
+  /// 新建。结果是一个 Camerax 会话被泄漏、另一个抢不到相机，表现为
+  /// **取景框全黑**或「相机启动失败」。重入请求直接忽略（用户再点一次即可）。
+  ///
+  /// 实现上拆成包装器 + Inner 两层，是为了不改动原逻辑的缩进与结构。
   Future<void> _setupController(
+    CameraDescription desc, {
+    bool enableAudio = false,
+  }) async {
+    if (_switching) {
+      debugPrint('[相机] 正在重建控制器，忽略重复请求');
+      return;
+    }
+    _switching = true;
+    try {
+      await _setupControllerInner(desc, enableAudio: enableAudio);
+    } finally {
+      _switching = false;
+    }
+  }
+
+  Future<void> _setupControllerInner(
     CameraDescription desc, {
     // **默认 false，每个调用点必须自己声明。**
     //
@@ -2330,7 +2357,11 @@ class _CameraPageState extends ConsumerState<CameraPage> {
 
     setState(() => _liveRecording = true);
     try {
-      await c.startVideoRecording();
+      // 加超时：相机异常时 startVideoRecording 可能**永不返回**，那样
+      // _liveRecording 会永远停在 true，快门被 _stopLiveClipEarly 永久拦截
+      // （表现为每次按快门都提示"上一段动态正在收尾"）——与之前快门卡死
+      // 属同一类"一个标志卡死全功能"的问题。
+      await c.startVideoRecording().timeout(const Duration(seconds: 5));
       // 分段等待而非一次睡满：用户中途按快门时能立刻收尾。
       final deadline = DateTime.now().add(
         const Duration(seconds: liveClipSeconds),
@@ -2514,7 +2545,10 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         sourceImage,
         Rect.fromLTWH(0, 0, sourceWidth, sourceHeight),
         Rect.fromLTWH(offsetX, offsetY, drawWidth, drawHeight),
-        Paint(),
+        // 默认 FilterQuality.none 是**最近邻**采样：选非原图比例时这里实际
+        // 在做缩放（如 4:3 档缩到 0.75×），会丢像素、产生锯齿与摩尔纹。
+        // 改成 medium（双线性）让缩放平滑——这是"看起来更清楚"里最廉价的一处。
+        Paint()..filterQuality = FilterQuality.medium,
       );
       picture = recorder.endRecording();
       composed = await picture.toImage(outputWidth, outputHeight);
