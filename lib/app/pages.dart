@@ -2225,6 +2225,8 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         // 网页端 dart2js 的逐像素性能明显弱于原生 AOT，长边压到 1800
         // 换取可接受的等待时间；原生端保留 2400。
         maxSide: kIsWeb ? 1800 : PetFilter.defaultMaxSide,
+        // 把检测到的宠物框带给滤镜：眼区/泪痕锚定框内、清晰度按主体分区。
+        subjectRect: _subjectRectForFilter(),
       );
       if (mounted) {
         busy = true;
@@ -2241,6 +2243,19 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     } finally {
       if (busy && mounted) setState(() => _filtering = false);
     }
+  }
+
+  /// 取当前检测到的宠物框，转成滤镜用的归一化坐标 record。
+  ///
+  /// 检测框来自 startImageStream 的完整 sensor 帧，与 takePicture 的成片
+  /// 同一坐标系（都是 sensor 全幅，未经过显示层的 cover 裁切），故直接透传。
+  /// 没检测到宠物 → null，滤镜的眼区/主体分区退回画面中央近似。
+  ({double left, double top, double right, double bottom})?
+  _subjectRectForFilter() {
+    if (_detections.isEmpty) return null;
+    // _detections 已按置信度降序，第一个即主目标。
+    final d = _detections.first;
+    return (left: d.left, top: d.top, right: d.right, bottom: d.bottom);
   }
 
   Future<void> _switchLens() async {

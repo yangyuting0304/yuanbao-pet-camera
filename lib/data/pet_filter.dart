@@ -75,6 +75,11 @@ class PetFilterKernel {
   static const double _eyeLiftMax = 14.0;
   static const double _eyeSharp = 0.35;
 
+  /// 主体分区：检测框外区域保留的清晰度/毛发质感增强比例。
+  /// 0.30 = 背景只做约三成增强（留一点通透，不至于是"死背景"），主体全额，
+  /// 视线自然被拉到猫身上——这是宠物版"人像模式"的核心。
+  static const double _subjectBgFloor = 0.30;
+
   /// 泪痕检测门控：偏红程度（r−b）在 12→36 之间平滑启动；
   /// 暗度门控（l<140 起步）把亮橙/棕毛发挡在外面，防止橘猫棕犬被误"去红"。
   static const double _tearRedLo = 12.0, _tearRedHi = 36.0;
@@ -161,6 +166,9 @@ class PetFilterKernel {
     double texture = 0,
     double eyeEnhance = 0,
     double tearStain = 0,
+    // 主体（宠物）检测框：相对本图的归一化坐标（left/top/right/bottom）。
+    // null = 未检测到，眼区/泪痕退回画面中央近似、清晰度/质感全图均匀。
+    ({double left, double top, double right, double bottom})? subjectRect,
   }) {
     final n = width * height;
     if (src.length < n * 4) {
@@ -278,12 +286,53 @@ class PetFilterKernel {
     final textureSharp = texture * _sharpRatio;
 
     // 眼区 / 泪痕区椭圆几何（比例坐标，与分辨率无关）。
-    // 位置是廉价近似的核心假设：正脸特写构图下双眼约在 0.40h，
-    // 泪痕在其正下方约 0.50h；宠物不在该区域时权重自然为 0，不误伤。
-    final eyeCx = width * 0.50, eyeCy = height * 0.40;
-    final eyeRx = width * 0.22, eyeRy = height * 0.10;
-    final tearCx = width * 0.50, tearCy = height * 0.50;
-    final tearRx = width * 0.20, tearRy = height * 0.10;
+    //
+    // ① 有检测框时锚定到框内：眼区取框的上 1/3、泪痕取框的中部偏下。
+    //    检测框与成片同为完整 sensor 帧、同一坐标系（见 PetDetector 注释），
+    //    直接按比例换算。宠物不在画面中央时，眼睛增强不再打偏——这是
+    //    "眼睛是宠物照片灵魂"能成立的关键。
+    // ② 无检测框时退回"画面中上部"近似（正脸特写下双眼约 0.40h），
+    //    宠物不在该区域时权重自然为 0，不误伤。
+    late final double eyeCx, eyeCy, eyeRx, eyeRy;
+    late final double tearCx, tearCy, tearRx, tearRy;
+    // 主体分区椭圆：框内清晰度/质感全额、框外衰减到 _subjectBgFloor。
+    // final：让 Dart 在 if (subjCx != null) 分支里把可空类型提升为非空
+    //（非 final 的可空变量在循环里不会被提升，编译期就报错了）。
+    final double? subjCx, subjCy, subjRx, subjRy;
+    if (subjectRect != null) {
+      final r = subjectRect;
+      final bw = (r.right - r.left).clamp(0.0, 1.0) * width;
+      final bh = (r.bottom - r.top).clamp(0.0, 1.0) * height;
+      final bcx = (r.left + r.right) / 2 * width;
+      final bcy = (r.top + r.bottom) / 2 * height;
+      final btop = r.top * height;
+      eyeCx = bcx;
+      eyeCy = btop + bh * 0.30;
+      eyeRx = bw * 0.45;
+      eyeRy = bh * 0.20;
+      tearCx = bcx;
+      tearCy = btop + bh * 0.54;
+      tearRx = bw * 0.38;
+      tearRy = bh * 0.18;
+      // 主体椭圆比检测框略放大：框是猫身的紧外接，增强要覆盖到毛发边缘。
+      subjCx = bcx;
+      subjCy = bcy;
+      subjRx = bw * 0.68;
+      subjRy = bh * 0.68;
+    } else {
+      eyeCx = width * 0.50;
+      eyeCy = height * 0.40;
+      eyeRx = width * 0.22;
+      eyeRy = height * 0.10;
+      tearCx = width * 0.50;
+      tearCy = height * 0.50;
+      tearRx = width * 0.20;
+      tearRy = height * 0.10;
+      subjCx = null;
+      subjCy = null;
+      subjRx = null;
+      subjRy = null;
+    }
     Float32List? eyeLiftLut;
     if (useEye) {
       eyeLiftLut = Float32List(256);
@@ -365,6 +414,15 @@ class PetFilterKernel {
                 textureSharp *
                 hfS *
                 _gate(hfS.abs(), _sharpGateLo, _sharpGateHi);
+          }
+          // ② 主体-背景分区：清晰度/毛发质感按"是否主体"加权——猫身要
+          // "根根分明"，背景（家具/地板）增强只会放大噪点与杂乱。
+          if (subjCx != null) {
+            // 一次性取出非空值：可空变量在像素循环内不会被 Dart 提升，
+            // 逐个断言太啰嗦，提取为局部非空变量最干净。
+            final cx = subjCx, cy = subjCy!, rx = subjRx!, ry = subjRy!;
+            final sw = _zoneWeight(x - cx, y - cy, rx, ry);
+            delta *= _subjectBgFloor + (1.0 - _subjectBgFloor) * sw;
           }
           r += delta;
           g += delta;
@@ -557,6 +615,9 @@ typedef PetFilterRequest = ({
   double tearStain,
   int maxSide,
   int jpegQuality,
+  /// 主体（宠物）检测框：相对成片的归一化坐标（left/top/right/bottom）。
+  /// null = 未检测到，眼区/泪痕与主体分区退回画面中央近似。
+  ({double left, double top, double right, double bottom})? subjectRect,
 });
 
 /// RGBA 像素 → JPEG 字节（供拍照页 Canvas 比例合成后的导出使用）。
@@ -635,6 +696,7 @@ Uint8List runPetFilter(PetFilterRequest req) {
     texture: req.texture,
     eyeEnhance: req.eyeEnhance,
     tearStain: req.tearStain,
+    subjectRect: req.subjectRect,
   );
 
   final outImage = img.Image.fromBytes(
@@ -672,6 +734,7 @@ class PetFilter {
     bool exposureAlreadyApplied = false,
     int maxSide = defaultMaxSide,
     int jpegQuality = defaultJpegQuality,
+    ({double left, double top, double right, double bottom})? subjectRect,
   }) => (
     bytes: encoded,
     exposure: exposureAlreadyApplied ? 0 : profile.exposureCompensation,
@@ -693,6 +756,7 @@ class PetFilter {
     tearStain: profile.tearStainFix ? PetCaptureProfile.tearStainStrength : 0.0,
     maxSide: maxSide,
     jpegQuality: jpegQuality,
+    subjectRect: subjectRect,
   );
 
   /// 同步套用滤镜（测试与简单场景用）。
@@ -702,6 +766,7 @@ class PetFilter {
     bool exposureAlreadyApplied = false,
     int maxSide = defaultMaxSide,
     int jpegQuality = defaultJpegQuality,
+    ({double left, double top, double right, double bottom})? subjectRect,
   }) => runPetFilter(
     buildRequest(
       encoded,
@@ -709,6 +774,7 @@ class PetFilter {
       exposureAlreadyApplied: exposureAlreadyApplied,
       maxSide: maxSide,
       jpegQuality: jpegQuality,
+      subjectRect: subjectRect,
     ),
   );
 }
