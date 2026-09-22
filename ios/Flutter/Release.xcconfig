@@ -1,2 +1,9 @@
 #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
 #include "Generated.xcconfig"
+
+// tflite_flutter 通过 FFI 调用 TensorFlowLiteC 的 C 函数。Release 构建默认
+// Strip Style=All Symbols，会把这些 C 符号剥离，运行时 Dart FFI 找不到符号
+// 即崩溃——表现为「宠物模式一调推理就闪退」，且只在 Release/正式包出现
+// （Debug 不剥符号所以开发时正常）。tflite_flutter 官方 README「iOS」节
+// 明确要求 Release 改用 Non-Global Symbols。
+STRIP_STYLE = non-global;
