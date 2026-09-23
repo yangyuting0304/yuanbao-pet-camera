@@ -23,6 +23,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
+import 'package:pet_camera/data/burst_selector.dart';
 
 /// 融合任务（compute 要求可跨 isolate 传递，只用基本类型）。
 typedef FusionRequest = ({
@@ -275,6 +276,26 @@ Uint8List fuseFrames(FusionRequest req) {
   // 只剩一帧可用时不重编码：原图字节就是最好的结果，还省一次全尺寸编码。
   if (planes.length == 1) return frames.first;
 
+  return _fusePlanes(planes, grays, targetW, targetH, req.jpegQuality);
+}
+
+/// 对已经"缩到统一尺寸 + 取好 RGBA 平面与灰度图"的若干帧做对齐、运动判定
+/// 与抗离群平均，最后编成 JPEG。planes[0] / grays[0] 即参考帧。
+///
+/// 抽出来是为了让 [fuseFrames] 与 [fuseFramesWithPick] 共用**同一份融合
+/// 数学**：两者只在"怎么准备 planes/grays"上不同（后者多做了一次选帧），
+/// 融合本身必须逐字节一致——这是画质的核心，不允许存在第二份实现。
+Uint8List _fusePlanes(
+  List<Uint8List> planes,
+  List<Uint8List> grays,
+  int targetW,
+  int targetH,
+  int jpegQuality,
+) {
+  // 与准备 planes/grays 时同一套推导（见 absorb 里的 _graySmall）。
+  final grayW = math.max(8, targetW ~/ 8);
+  final grayH = math.max(8, targetH ~/ 8);
+
   // 对齐：每帧相对参考帧的平移量。灰度图已备好，不必再解位图。
   final refGray = grays.first;
   final shifts = <({int dx, int dy})>[const (dx: 0, dy: 0)];
@@ -350,5 +371,160 @@ Uint8List fuseFrames(FusionRequest req) {
     numChannels: 4,
     order: img.ChannelOrder.rgba,
   );
-  return img.encodeJpg(merged, quality: req.jpegQuality);
+  return img.encodeJpg(merged, quality: jpegQuality);
+}
+
+// ───────────── 选帧 + 融合：单次解码（性能关键路径） ─────────────
+
+/// 选帧 + 融合的合并任务（compute 要求可跨 isolate 传递，只用基本类型）。
+typedef FusionPickRequest = ({
+  List<Uint8List> frames,
+  /// 输出长边上限。
+  int maxSide,
+  int jpegQuality,
+  /// 清晰度评分抽样后的短边目标像素数。
+  int sampleTarget,
+});
+
+/// 合并结果：成片 + 被选为参考帧的原下标 + 参与的总帧数。
+typedef FusionPickResult = ({Uint8List bytes, int pickedIndex, int total});
+
+/// **选帧 + 融合，每帧只解码一次。**
+///
+/// 旧流程是两步两条 compute：先 `runBurstSelection` 把每帧**全尺寸**解出来
+/// 只为算一个 320px 的清晰度分数（算完整帧丢掉），紧接着 `fuseFrames` 再把
+/// 每帧全尺寸解一遍。同一批字节被纯 Dart JPEG 解码 **2N 次**——12MP 单帧
+/// 解码就是几百毫秒，5 连拍白做 5 次，这正是「连拍非常慢」的最大一笔开销。
+///
+/// 这里改成：解一帧 → 立刻缩到目标尺寸 → 在同一份 RGBA 平面上同时
+/// ①打分 ②留作融合平面。解码次数 N，内存峰值不变。
+///
+/// 另外只保留最清晰的 [_maxFusionFrames] 帧：融合本来也只吃这么多，
+/// 多留的平面每帧就是几十 MB 白占（10 连拍时旧实现会同时驻留 10 片）。
+FusionPickResult fuseFramesWithPick(FusionPickRequest req) {
+  final frames = req.frames;
+  if (frames.isEmpty) {
+    return (bytes: Uint8List(0), pickedIndex: 0, total: 0);
+  }
+  if (frames.length == 1) {
+    return (bytes: frames.first, pickedIndex: 0, total: 1);
+  }
+
+  // **逐帧解码 → 提取平面/灰度 → 立刻释放**。不能"先全解码再统一尺寸"：
+  // 相机原图 4000×3000 时单帧就占约 48MB，五帧 240MB——顶穿进程内存上限。
+  img.Image? first;
+  for (final bytes in frames) {
+    try {
+      first = img.decodeImage(bytes);
+      if (first != null) break;
+    } catch (_) {
+      // 单帧解码失败就跳过它，其余帧照常融合。
+    }
+  }
+  if (first == null) {
+    return (bytes: frames.first, pickedIndex: 0, total: frames.length);
+  }
+
+  final longSide = math.max(first.width, first.height);
+  final scale = req.maxSide > 0 && longSide > req.maxSide
+      ? req.maxSide / longSide
+      : 1.0;
+  final targetW = (first.width * scale).round();
+  final targetH = (first.height * scale).round();
+  if (targetW < 8 || targetH < 8) {
+    first.clear();
+    return (bytes: frames.first, pickedIndex: 0, total: frames.length);
+  }
+
+  final grayW = math.max(8, targetW ~/ 8);
+  final grayH = math.max(8, targetH ~/ 8);
+  final planes = <Uint8List>[];
+  final grays = <Uint8List>[];
+  final scores = <double>[];
+  final sources = <int>[];
+
+  /// 收一帧：转尺寸 → 取 RGBA 平面 → 在同一份像素上打分 → 取灰度。
+  void absorb(img.Image one, int sourceIndex) {
+    final sized = (one.width == targetW && one.height == targetH)
+        ? one
+        : img.copyResize(
+            one,
+            width: targetW,
+            height: targetH,
+            interpolation: img.Interpolation.average,
+          );
+    final plane = sized.getBytes(order: img.ChannelOrder.rgba);
+    // 分数在**缩放后**的平面上算：一是省掉一次全尺寸解码，二是
+    // copyResize 已做过抗混叠，比在原图上跳采更不容易被摩尔纹带偏。
+    final score = BurstSelector.scoreSharpness(
+      plane,
+      width: targetW,
+      height: targetH,
+      sampleTarget: req.sampleTarget,
+    );
+
+    if (planes.length < _maxFusionFrames) {
+      planes.add(plane);
+      grays.add(_graySmall(sized, grayW, grayH));
+      scores.add(score);
+      sources.add(sourceIndex);
+      return;
+    }
+    // 已满：只有比手上最差的那帧更清晰才顶替它。
+    var worst = 0;
+    for (var i = 1; i < scores.length; i++) {
+      if (scores[i] < scores[worst]) worst = i;
+    }
+    if (score <= scores[worst]) return;
+    planes[worst] = plane;
+    grays[worst] = _graySmall(sized, grayW, grayH);
+    scores[worst] = score;
+    sources[worst] = sourceIndex;
+  }
+
+  absorb(first, 0);
+  first.clear(); // 显式清掉像素，不等 GC——这里是内存峰值的关键路径。
+  first = null;
+
+  for (var i = 1; i < frames.length; i++) {
+    img.Image? one;
+    try {
+      one = img.decodeImage(frames[i]);
+    } catch (_) {
+      one = null;
+    }
+    // 坏帧直接跳过：planes / grays / scores / sources 下标仍一一对应。
+    if (one == null) continue;
+    absorb(one, i);
+    one.clear();
+  }
+
+  // 一帧可用（或全部解不开）时不重编码：原图字节就是最好的结果。
+  if (planes.length < 2) {
+    return (bytes: frames.first, pickedIndex: 0, total: frames.length);
+  }
+
+  // 把最清晰的一帧换到首位当参考帧——只换 List 引用，不做任何拷贝。
+  var best = 0;
+  for (var i = 1; i < scores.length; i++) {
+    if (scores[i] > scores[best]) best = i;
+  }
+  if (best != 0) {
+    void swapAt<T>(List<T> list) {
+      final t = list[0];
+      list[0] = list[best];
+      list[best] = t;
+    }
+
+    swapAt(planes);
+    swapAt(grays);
+    swapAt(scores);
+    swapAt(sources);
+  }
+
+  return (
+    bytes: _fusePlanes(planes, grays, targetW, targetH, req.jpegQuality),
+    pickedIndex: sources.first,
+    total: frames.length,
+  );
 }

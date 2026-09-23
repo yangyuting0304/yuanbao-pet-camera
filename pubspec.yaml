@@ -1,7 +1,17 @@
 name: pet_camera
 description: 元宝拍拍 - AI 宠物影像 App（v1 主演示端：Android）
 publish_to: 'none'
-version: 1.0.0+1
+# 版本号格式 `版本名+构建号`，是**三端唯一的版本来源**（不要另外硬编码）：
+#   - iOS：Info.plist 的 CFBundleShortVersionString/CFBundleVersion 分别引用
+#     $(FLUTTER_BUILD_NAME)/$(FLUTTER_BUILD_NUMBER)，由 Flutter 从这里生成；
+#   - Android：build.gradle.kts 用 flutter.versionName / flutter.versionCode；
+#   - 界面：设置页「关于」通过 appVersionProvider 运行时读取（见 app_version.dart）。
+#
+# **每次发包必须递增 `+N`**，否则装了新版也分辨不出来（iOS 的
+# CFBundleVersion 就是它，TestFlight 也不接受重复的构建号）。
+# CI 上可以不改这里，用构建参数自动递增：
+#   flutter build ipa --build-number=$BUILD_NUMBER
+version: 1.1.0+2
 
 environment:
   sdk: ^3.12.0
@@ -41,6 +51,7 @@ dependencies:
   gal: ^2.3.1
   # 全站备案号 Footer：点击跳转工信部备案管理系统
   url_launcher: ^6.3.0
+  package_info_plus: ^9.0.1
 
 dev_dependencies:
   flutter_test:
