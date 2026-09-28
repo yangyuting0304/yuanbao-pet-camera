@@ -5,7 +5,8 @@ import 'dart:ui' as ui;
 import 'package:camera/camera.dart';
 import 'package:video_player/video_player.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, compute;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, compute, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -1368,9 +1369,18 @@ class CameraPage extends ConsumerStatefulWidget {
 class _CameraPageState extends ConsumerState<CameraPage> {
   static const Duration _cameraInitTimeout = Duration(seconds: 10);
 
-  /// 释放旧控制器后的等待时间。Camerax 释放底层相机会话是异步的，
-  /// 不等这一下，紧接着的初始化会抢不到相机（切模式黑屏的成因之一）。
-  static const Duration _cameraReleaseDelay = Duration(milliseconds: 250);
+  /// 释放旧控制器后的等待时间。
+  ///
+  /// Camerax 释放底层相机会话是异步的，不等这一下，紧接着的初始化会抢不到
+  /// 相机（切模式黑屏的成因之一）。
+  ///
+  /// **iOS 必须更久**：AVFoundation 同一时刻只允许一个活动会话，dispose 后
+  /// 过早 initialize 会直接崩进程（实拍反馈：点「宠物」标签瞬间闪退回桌面）。
+  /// CameraX 250ms 够用，iOS 给到 800ms 余量。
+  static Duration get _cameraReleaseDelay =>
+      (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS)
+      ? const Duration(milliseconds: 800)
+      : const Duration(milliseconds: 250);
 
   /// 自动识别的抓帧超时。takePicture 在个别机型上会长时间不返回，
   /// 没有超时会让「识别中」永久卡住，用户连手动重试都点不动。
@@ -2652,12 +2662,30 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     await _stopLiveClipEarly();
     // 切模式会重建控制器，对焦点与缩放先复位。
     _resetFocusAndZoom();
+
+    // **只有音频轨需求真的变化时才重建控制器。**
+    //
+    // 原实现每次切模式都无条件重建，而 enableAudio 只在视频模式为 true：
+    // 「拍照 ↔ 宠物」之间它根本没变，重建纯属多余——却正好踩中 iOS 上最
+    // 危险的一步：AVFoundation 同一时刻只允许一个活动会话，dispose 旧会话
+    // 后立刻 initialize 新会话会直接崩进程（实拍反馈「点宠物标签瞬间闪退
+    // 回桌面」）。CameraX 能容忍这一步，iOS 不能。
+    final needAudio = i == 1;
+    final audioChanged = needAudio != (_modeIndex == 1);
+
     setState(() {
       _modeIndex = i;
       _audioUnsupported = false;
     });
-    // 仅在视频模式开启音频轨（原因见 _initCamera 的说明）。
-    await _setupController(_cameras[_cameraIndex], enableAudio: i == 1);
+
+    if (audioChanged) {
+      // 仅在视频模式开启音频轨（原因见 _initCamera 的说明）。
+      await _setupController(_cameras[_cameraIndex], enableAudio: needAudio);
+    } else {
+      // 不重建时，把新模式对应的拍摄参数下发给现有控制器——否则宠物模式的
+      // 曝光/对焦/闪光策略不会生效。
+      await _applyPetProfile();
+    }
     // 进入宠物模式时自动识别一次——这才叫"打开相机就能拍"，
     // 而不是"打开相机先选四个维度"。整个会话只自动跑一次，
     // 之后由用户点按钮手动重跑。
