@@ -19,7 +19,8 @@ import 'dart:ui' as ui;
 import 'package:camera/camera.dart';
 import 'package:video_player/video_player.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, compute;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, compute, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
