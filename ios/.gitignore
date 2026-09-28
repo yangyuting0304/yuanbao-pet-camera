@@ -32,3 +32,7 @@ Runner/GeneratedPluginRegistrant.*
 !default.mode2v3
 !default.pbxuser
 !default.perspectivev3
+
+# Podfile.lock 曾因开发机是 Windows 而长期过时（缺 camera/gal 等插件），
+# 与 Podfile 不匹配反而误导构建。交给构建机按当前 pubspec 重新生成。
+Podfile.lock
