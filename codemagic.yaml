@@ -1,0 +1,73 @@
+# Codemagic 云端构建配置 —— iOS 未签名 ipa（供 AltStore / Sideloadly 侧载测试）
+#
+# ## 为什么不做签名
+#
+# AltStore / Sideloadly 这类侧载工具会**用自己的 Apple ID 重新签名**，
+# 所以我们只需要产出**未签名**的 ipa。好处是彻底省掉证书（.p12）与描述文件
+# （.mobileprovision）的配置、以及它们每 7 天 / 1 年的过期维护。
+#
+# ## 怎么用
+#
+# 1. Codemagic 用 GitHub 账号登录后，添加本仓库；
+# 2. 它会自动识别这份 codemagic.yaml；
+# 3. 点 "Start new build" → 选 workflow `ios-unsigned`；
+# 4. 构建完成后，在该次构建的 Artifacts 里下载 ipa；
+# 5. 用 Sideloadly 把 ipa 装到 iPhone（需输入自己的 Apple ID）。
+#
+# ## 说明
+#
+# - 免费额度：macOS 构建每月 500 分钟，本项目 iOS 构建约 10~20 分钟/次。
+# - 未在 push 时自动触发（见 triggering），避免每次提交都消耗额度；
+#   需要时手动点构建即可。
+
+workflows:
+  ios-unsigned:
+    name: iOS 未签名 ipa（侧载测试）
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    environment:
+      # 项目要求 flutter >= 3.44.0（pubspec.yaml），stable 渠道满足。
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+
+    cache:
+      cache_paths:
+        # 官方文档明确提示：不要缓存 DerivedData（对加速 iOS 构建无帮助）。
+        # 只缓存真正的依赖缓存。
+        - $HOME/Library/Caches/CocoaPods
+        - $FLUTTER_ROOT/.pub-cache
+
+    scripts:
+      - name: 拉取 Dart 依赖
+        script: |
+          flutter --version
+          flutter pub get
+
+      - name: 重置 iOS Pods
+        # 仓库不提交 Podfile.lock（历史版本曾因开发机是 Windows 而长期过时、
+        # 缺 camera_avfoundation 与 gal，反而误导构建）。这里彻底清掉，
+        # 让 CocoaPods 按当前 pubspec 重新解析，确保相机与相册插件都在。
+        script: |
+          cd ios
+          rm -rf Pods Podfile.lock .symlinks
+
+      - name: 构建 iOS（release，不签名）
+        script: |
+          flutter build ios --release --no-codesign
+
+      - name: 打包成未签名 ipa
+        script: |
+          cd build/ios/iphoneos
+          rm -rf Payload
+          mkdir -p Payload
+          cp -r Runner.app Payload/
+          zip -r -q yuanbao-pet-camera-unsigned.ipa Payload
+          echo "=== 产物 ==="
+          ls -lh yuanbao-pet-camera-unsigned.ipa
+
+    artifacts:
+      - build/ios/iphoneos/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - flutter_drive.log
