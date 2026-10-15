@@ -8,6 +8,7 @@
 // 归到 4 个物种后概率求和。ImageNet 有一百多个犬种，聚合后的置信度
 // 远高于 top-1 单类，且单类误判会被同类其他项稀释。
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -125,7 +126,14 @@ class OnDeviceSpeciesDetector implements PetSpeciesDetector {
 }
 
 /// 平台工厂：端侧优先，云端兜底。
-PetSpeciesDetector create() => TieredSpeciesDetector(
-      OnDeviceSpeciesDetector(),
-      CloudSpeciesDetector(),
-    );
+///
+/// iOS 上跳过端侧 TFLite（与 pet_detector_io 同因：推理在 iOS 上触发
+/// native 崩溃），直接走云端兜底；识别不出时上层自动沿用当前物种参数，
+/// 不影响拍摄主流程。
+PetSpeciesDetector create() {
+  if (Platform.isIOS) return CloudSpeciesDetector();
+  return TieredSpeciesDetector(
+    OnDeviceSpeciesDetector(),
+    CloudSpeciesDetector(),
+  );
+}

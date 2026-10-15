@@ -1136,7 +1136,15 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       // 动态照片：照片已经进列表了，短片在后台补录、录完再关联回来。
       // 这里**不能 await**——否则用户按完快门要干等 2 秒才能继续拍。
       // 宠物模式不录（VideoCapture 与它的实时图像流互斥，见 _setupController）。
-      if (_modeIndex != 2 && ref.read(livePhotoEnabledProvider)) {
+      //
+      // iOS 暂不录：「点快门闪退」的主要嫌疑就是在拍照模式（enableAudio:false）
+      // 的会话上直接 startVideoRecording。拿到崩溃日志确认前，iOS 先关掉
+      // 动态短片，保住「能拍照、能保存」这条底线；照片本身不受影响。
+      final livePhotoAllowed =
+          !(!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS);
+      if (livePhotoAllowed &&
+          _modeIndex != 2 &&
+          ref.read(livePhotoEnabledProvider)) {
         unawaited(_captureLiveClip(photo));
       }
       // 自动存进系统相册。

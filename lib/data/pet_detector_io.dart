@@ -5,6 +5,7 @@
 //   1: category [1, 25]     → 1-based（0 = 背景）
 //   2: score    [1, 25]     → 0..1
 //   3: count    [1]         → 有效条目数
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
@@ -98,7 +99,14 @@ class _DetectorImpl {
   }
 }
 
-bool get isAvailable => _DetectorImpl.instance.isAvailable;
+/// iOS 上禁用端侧实时检测。
+///
+/// 宠物模式帧流每秒约 5 次调 TFLite（EfficientDet）推理，在 iOS 上触发
+/// native 崩溃——切模式闪退修复后，实拍崩溃点后移为「进宠物模式后未拍照
+/// 就闪退」，正是这里。禁用后宠物模式退回点按对焦，先保可用；Android
+/// 不受影响。等升级 tflite_flutter / 拿到崩溃日志定位到具体原因后再恢复。
+bool get isAvailable =>
+    !Platform.isIOS && _DetectorImpl.instance.isAvailable;
 
 Future<List<PetDetection>> detect(Uint8List rgb) =>
     _DetectorImpl.instance.detect(rgb);
