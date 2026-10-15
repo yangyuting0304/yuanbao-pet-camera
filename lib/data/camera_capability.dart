@@ -39,12 +39,47 @@ enum CaptureQuality {
   /// 当前平台的首选预设。
   ResolutionPreset get preset => kIsWeb ? _webPreset : _nativePreset;
 
+  /// 真正交给 [CameraController] 的预设（按平台封顶）。
+  ///
+  /// 与 [preset] 的唯一差别是 iOS 上「超清」从 `max` 降到 `veryHigh`，
+  /// 原因见 [_iosUltraPreset]。
+  ResolutionPreset get effectivePreset {
+    if (kIsWeb) return _webPreset;
+    if (this == CaptureQuality.ultra &&
+        defaultTargetPlatform == TargetPlatform.iOS) {
+      return _iosUltraPreset;
+    }
+    return _nativePreset;
+  }
+
+  /// iOS 上「超清」实际使用的预设。
+  ///
+  /// **为什么 iOS 不用 `ResolutionPreset.max`**（实测「点快门闪退回桌面」）：
+  ///
+  /// camera_avfoundation 对 `.max` 的处理不是"提高一点"，而是把
+  /// `AVCaptureDevice.activeFormat` 换成**像素最高的 format**，并让
+  /// `AVCapturePhotoSettings.maxPhotoDimensions` 取该 format 支持的最大值。
+  /// 在 iPhone 14 Pro Max / 15 这类机型上那就是**全尺寸 48MP**。
+  /// 而本App 的出片链路是纯 Dart 逐像素处理：
+  /// 连拍（多张 JPEG 字节同时在手）→ 融合（`img.decodeImage` 全尺寸解码，
+  /// 48MP 单帧 RGBA ≈ 192MB）→ 滤镜 → 比例合成。三四张就会顶穿 iOS 的
+  /// 进程内存上限，被系统**直接杀掉**（jetsam）——现象就是按快门瞬间退回桌面。
+  ///
+  /// `veryHigh` 对应 iPhone 系统相机默认的 12MP（4032×3024）量级，画质与
+  /// 系统相机持平，而像素数只有全尺寸的 1/4、峰值内存降到 1/16。
+  /// 「比系统相机好看」靠的是毛色自适应曝光、多帧融合降噪与毛发质感，
+  /// 不靠堆像素——用命换像素不划算。
+  static ResolutionPreset get _iosUltraPreset => ResolutionPreset.veryHigh;
+
   /// 降级链：从本档位往低尝试，最多 3 档。
   ///
   /// 用于初始化失败时逐级重试，避免一次失败就完全拍不了照。
+  ///
+  /// 起点必须是 [effectivePreset] 而不是 [preset]：iOS 上「超清」被封顶到
+  /// `veryHigh`，若从 `max` 起步，第一档就是会被 jetsam 杀掉的全尺寸格式。
   List<ResolutionPreset> get fallbackChain {
     final all = ResolutionPreset.values; // low → max，画质递增
-    final start = all.indexOf(preset);
+    final start = all.indexOf(effectivePreset);
     final end = (start - 2).clamp(0, all.length - 1);
     return [
       for (var i = start; i >= end; i--) all[i],

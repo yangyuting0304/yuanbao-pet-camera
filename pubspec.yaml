@@ -33,7 +33,14 @@ dependencies:
   # 旧页面暂时还在使用 Lucide，先保留依赖避免二级页报错。
   lucide_flutter: ^1.25.0
   # 相机插件（切片2：真实取景框 + 快门拍照；Web/Android 双端支持）
-  camera: ^0.11.1
+  # 0.12.x：新增 setJpegImageQuality（JPEG 质量控制）；修复 dispose 后仍更新值的崩溃。
+  camera: ^0.12.1
+  # 显式锁定 iOS 相机实现 ≥0.10.3：
+  # 0.9.x 在 iOS 16+ 仍用已废弃的 isHighResolutionCaptureEnabled 处理
+  # ResolutionPreset.max，在 iPhone 14 Pro Max（48MP HEIF 主摄）上会触发
+  # native 崩溃/行为异常（实拍反馈：点快门直接闪退回桌面）。0.10.3 起改用
+  # maxPhotoDimensions 并修复 max 档 HEIF 忽略分辨率的问题。
+  camera_avfoundation: ^0.10.3+1
   # 端侧物种识别（LiteRT/TFLite，MobileNetV2 量化 ImageNet 分类）。
   # 仅 Android/iOS 可用；Web 构建靠条件导入隔离（default_species_detector_*.dart）。
   tflite_flutter: ^0.11.0

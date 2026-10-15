@@ -44,6 +44,23 @@ class _CameraPageState extends ConsumerState<CameraPage> {
   /// 多帧融合的输出长边上限。
   /// 与滤镜同一档（都要在 isolate 里逐像素跑），3000 是画质与内存的折中。
   static const int _fusionMaxSide = 3000;
+
+  /// iOS 上单次快门的最大连拍张数。
+  ///
+  /// 连拍的全部 JPEG 字节会**同时**留在内存里，融合时还要逐张解码成 RGBA。
+  /// 张数是这条链路上最容易踩到jetsam 的一个旋钮：iPhone的进程内存上限比
+  /// Android 机型更紧（尤其 12MP 起步的机型上 3 张就接近峰值），
+  /// 而 3 帧融合降噪已经能拿到绝大部分收益——从 3 提到 10 帧，
+  /// 噪声只多降一点点，闪退风险却成倍上升。
+  static const int _iosMaxBurstShots = 3;
+
+  /// 当前平台实际会拍几张（iOS 上封顶，见 [_iosMaxBurstShots]）。
+  int get _effectiveBurstShots {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      return math.min(_burstShots.count, _iosMaxBurstShots);
+    }
+    return _burstShots.count;
+  }
   // UI 按常见相机文案展示 4:3 / 16:9，内部仍按竖屏预览比例计算。
   static const List<String> _photoRatioLabels = ['原图', '1:1', '4:3', '16:9'];
   static const List<double?> _photoRatioValues = [null, 1.0, 3 / 4, 9 / 16];
@@ -547,7 +564,10 @@ class _CameraPageState extends ConsumerState<CameraPage> {
 
   /// 所选档位没跑起来时提示用户已自动降级。
   String get _downgradeHint {
-    if (_activePreset == null || _activePreset == _quality.preset) return '';
+    // 比较 effectivePreset：iOS 上「超清」本来就跑在 veryHigh，不该提示降级。
+    if (_activePreset == null || _activePreset == _quality.effectivePreset) {
+      return '';
+    }
     return '（设备不支持「${_quality.label}」，已自动降级到可用档位）';
   }
 
@@ -827,7 +847,10 @@ class _CameraPageState extends ConsumerState<CameraPage> {
   /// 选帧不成功也绝不能让用户按了快门却没有照片。
   /// 连拍，返回**全部帧**（交给 [_fuseFrames] 做多帧融合）。
   Future<List<Uint8List>> _captureBurst() async {
-    final count = _burstShots.count;
+    final count = _effectiveBurstShots;
+    if (count != _burstShots.count) {
+      debugPrint('[连拍] iOS 上按${_burstShots.count} 连拍封顶到 $count 张（内存上限）');
+    }
     final shots = <Uint8List>[];
     for (var i = 0; i < count; i++) {
       // 单张加超时：相机处于异常状态时 takePicture 可能**永久不返回**，

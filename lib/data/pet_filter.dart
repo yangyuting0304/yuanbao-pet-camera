@@ -75,6 +75,23 @@ class PetFilterKernel {
   static const double _eyeLiftMax = 14.0;
   static const double _eyeSharp = 0.35;
 
+  /// 色度降噪相对亮度降噪的比例（[apply] 的 `chromaDenoise` 由此派生）。
+  ///
+  /// 取 0.9 而不是 1.0：色度被磨平后，**毛发边缘的"色彩过渡"也会跟着变窄**，
+  /// 纯度到 1.0 时猫脸边缘在 100% 上会看出轻微的色边。留一成不磨最稳。
+  static const double chromaDenoiseScale = 0.9;
+
+  /// 色度平面的平滑半径（像素）。1 = 十字5 点（上下左右 + 中心）。
+  ///
+  /// 只取 1 而不是更大：色度噪声是**高频、低振幅**的，5 点平均已经足够；
+  /// 再大就会开始啃掉毛发边缘的色彩层次（俗称"塑料味"）。
+  /// 这也是相机 ISP 里 chroma denoise 的常规做法——
+  /// 色度子采样（4:2:0）本身就是这个量级的空间平均。
+  static const int _chromaRadius = 1;
+
+  /// 色度零点的编码偏移：色度以 128 为中心，范围 [0, 255] 对应 [−128, +127]。
+  static const double _chromaMid = 128.0;
+
   /// 主体分区：检测框外区域保留的清晰度/毛发质感增强比例。
   /// 0.30 = 背景只做约三成增强（留一点通透，不至于是"死背景"），主体全额，
   /// 视线自然被拉到猫身上——这是宠物版"人像模式"的核心。
@@ -159,6 +176,7 @@ class PetFilterKernel {
     double highlightRolloff = 0,
     double clarity = 0,
     double noiseReduction = 0,
+    double chromaDenoise = 0,
     double vignette = 0,
     double saturation = 1.0,
     double vibrance = 0,
@@ -285,6 +303,46 @@ class PetFilterKernel {
     final textureMid = texture;
     final textureSharp = texture * _sharpRatio;
 
+    // ───────────── 色度降噪（手机上最刺眼的那种噪点） ─────────────
+    //
+    // 前面整段降噪都在**亮度**上做削波，可手机在低光下拍出来的噪点
+    // 绝大多数是**彩色的**（ISO 高起来后 CFA插值与降采样先后出错，
+    // 直接在色度通道上炸出红绿斑点）。人眼对色度噪声的敏感度远高于
+    // 亮度噪声：亮度颗粒看不太出来，彩色斑点一眼就"脏"。
+    // 系统相机 ISP 里的 chroma denoise 就是这一环，我们原先完全没有——
+    // 这也是"成片比原相机糙"最实的一个来源。
+    //
+    // 做法等价于 JPEG/HEIF 域的 **4:2:0 色度子采样**（同一个原理，
+    // 相机内部本来就在做）：
+    //   ① 色度 = 通道 − 亮度，是一张围绕 0 起伏的平面；
+    //   ② 对色度做十字平均（半径 1，见 [_chromaRadius]）；
+    //   ③ 用**原亮度** + 平滑后的色度重建 RGB。
+    // 亮度的高频一格没动，所以毛发边缘、眼神光全都保住；掉的只有色斑。
+    //
+    // 存8bit 而不是 float：色度动态范围小（±127），2 级量化远细于JPEG
+    // 4:2:0 本身的量化步长，肉眼与后续编码都察觉不到；而 3000px 成片
+    // 下float 平面要多占 4 倍内存，这里正是内存最紧张的地方。
+    final useChroma = chromaDenoise > 0.001;
+    Uint8List? chromaCr;
+    Uint8List? chromaCb;
+    if (useChroma) {
+      final cr = Uint8List(n);
+      final cb = Uint8List(n);
+      for (var i = 0; i < n; i++) {
+        final o = i * 4;
+        // 与 luma 一样取**查表之后**的值，保证色度降噪作用在成片观感上。
+        final r0 = lutR[src[o]].toDouble();
+        final g0 = lutG[src[o + 1]].toDouble();
+        final b0 = lutB[src[o + 2]].toDouble();
+        final l0 = 0.2126 * r0 + 0.7152 * g0 + 0.0722 * b0;
+        // ×0.5 让 ±255 的色差落进 [0.5, 255.5]，正好不丢端点。
+        cr[i] = (_chromaMid + (r0 - l0) * 0.5).round().clamp(0, 255);
+        cb[i] = (_chromaMid + (b0 - l0) * 0.5).round().clamp(0, 255);
+      }
+      chromaCr = _crossBlur(cr, width, height, _chromaRadius);
+      chromaCb = _crossBlur(cb, width, height, _chromaRadius);
+    }
+
     // 眼区 / 泪痕区椭圆几何（比例坐标，与分辨率无关）。
     //
     // ① 有检测框时锚定到框内：眼区取框的上 1/3、泪痕取框的中部偏下。
@@ -384,6 +442,26 @@ class PetFilterKernel {
           r = l + (r - l) * k;
           g = l + (g - l) * k;
           b = l + (b - l) * k;
+        }
+
+        // 色度降噪：保留当前亮度，替换成平滑后的色度。
+        //
+        // 必须排在饱和度 / vibrance **之后**——它们都在放大色度差异，
+        // 先降噪等于白降。而清晰度 / 毛发质感只动亮度（r/g/b 加同一个
+        // delta，不改变色度），放在后面互不干扰。
+        if (useChroma) {
+          final l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+          // 平滑后的色度（本像素该有的 r−l / b−l），反推用 ×2 还原编码比例。
+          final crWant = (chromaCr![i] - _chromaMid) * 2;
+          final cbWant = (chromaCb![i] - _chromaMid) * 2;
+          // 按强度线性插值，而不是直接替换：强度不足时保留一部分原色度，
+          // 强度拉满也不会超出平滑结果。
+          r += (crWant - (r - l)) * chromaDenoise;
+          b += (cbWant - (b - l)) * chromaDenoise;
+          // 让亮度严格不变：G 由亮度反解，而不是跟着一起动。
+          // 少了这一步，整体会轻微偏亮（0.0722/0.7152≈0.1 的偏差在
+          // 大面积平滑过的暗部非常显眼）。
+          g = (l - 0.2126 * r - 0.0722 * b) / 0.7152;
         }
 
         // 微对比（+）与降噪（−）都作用在亮度高频分量上，方向相反。
@@ -514,6 +592,36 @@ class PetFilterKernel {
     return out;
   }
 
+  /// 十字平均（中心 + 上下左右各 [radius] 个），色度降噪专用。
+  ///
+  /// 不用盒式模糊是因为色度平面**已经有量化噪声**（存8bit），
+  /// 3×3 盒式与十字 5 点在色斑尺度上效果几乎一样，但十字算得快、
+  /// 边界处理更简单（边缘像素复制而非重新归一化）。O(n)，与半径无关。
+  static Uint8List _crossBlur(
+    Uint8List src,
+    int width,
+    int height,
+    int radius,
+  ) {
+    if (radius <= 0) return src;
+    final out = Uint8List(src.length);
+    final weight = 1 + 4 * radius;
+    for (var y = 0; y < height; y++) {
+      final row = y * width;
+      for (var x = 0; x < width; x++) {
+        var sum = src[row + x];
+        for (var k = 1; k <= radius; k++) {
+          sum += src[(y - k).clamp(0, height - 1) * width + x];
+          sum += src[(y + k).clamp(0, height - 1) * width + x];
+          sum += src[row + (x - k).clamp(0, width - 1)];
+          sum += src[row + (x + k).clamp(0, width - 1)];
+        }
+        out[row + x] = (sum / weight).round().clamp(0, 255);
+      }
+    }
+    return out;
+  }
+
   /// 确定性的颗粒噪点，返回 -1..1。
   ///
   /// 刻意只用 16 位种子 + 一次小系数乘法：Dart VM 是 64 位整数，而 Web 端是
@@ -606,6 +714,8 @@ typedef PetFilterRequest = ({
   double highlightRolloff,
   double clarity,
   double noiseReduction,
+  /// 色度降噪强度（0~1）。与 [noiseReduction] 分开传，便于单独调参与测试。
+  double chromaDenoise,
   double vignette,
   double saturation,
   double vibrance,
@@ -689,6 +799,7 @@ Uint8List runPetFilter(PetFilterRequest req) {
     highlightRolloff: req.highlightRolloff,
     clarity: req.clarity,
     noiseReduction: req.noiseReduction,
+    chromaDenoise: req.chromaDenoise,
     vignette: req.vignette,
     saturation: req.saturation,
     vibrance: req.vibrance,
@@ -743,6 +854,11 @@ class PetFilter {
     highlightRolloff: profile.highlightRolloff,
     clarity: profile.clarity,
     noiseReduction: profile.noiseReduction,
+    // 色度降噪跟随亮度降噪：手机上低光噪点绝大多数是**彩色**的，
+    // 只削亮度等于没削（人眼对色度噪声远比亮度噪声敏感）。
+    // 比例由内核里的 chromaDenoiseScale 控制，profile 不需要为它单开一维。
+    chromaDenoise:
+        profile.noiseReduction * PetFilterKernel.chromaDenoiseScale,
     vignette: profile.vignette,
     saturation: profile.saturation,
     vibrance: profile.vibrance,
