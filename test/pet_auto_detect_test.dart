@@ -414,7 +414,10 @@ void main() {
       expect(setup.needsConfirmation, isFalse);
     });
 
-    test('没有物种识别能力时用兜底物种，并明确要求用户确认', () {
+    test('没有物种识别能力时沿用兜底物种，且**不**因此要求用户确认', () {
+      // 产品已收敛为只拍猫：物种是常量，不存在"判错"的风险，
+      // 所以物种识别缺失不再计入 needsConfirmation——否则每次都弹
+      // "请确认物种"，用户能确认的东西根本不会变。
       final setup = PetAutoProfiler.resolve(
         coat: PetCoatAnalyzer.classify(
           meanLuma: 0.9,
@@ -429,10 +432,29 @@ void main() {
       expect(setup.detectedSpecies, isNull);
       expect(
         setup.needsConfirmation,
-        isTrue,
-        reason: '物种没识别出来是确定的事实，必须让用户知道',
+        isFalse,
+        reason: '毛色判得准就不该再要求确认——物种恒为猫，无从确认',
       );
-      expect(setup.summary, contains('未识别'));
+      expect(setup.summary, contains('已按猫参数'));
+      expect(
+        setup.summary,
+        isNot(contains('未识别')),
+        reason: '不说"未识别"——识别已停用，说了会让用户以为功能坏了',
+      );
+    });
+
+    test('毛色也没把握时仍然要求确认（这才是真正需要用户过目的）', () {
+      final setup = PetAutoProfiler.resolve(
+        coat: PetCoatAnalyzer.classify(
+          meanLuma: 0.5,
+          saturation: 0.3,
+          lightFraction: 0.22,
+          darkFraction: 0.22,
+        ),
+        speciesGuess: null,
+        fallbackSpecies: PetSpecies.cat,
+      );
+      expect(setup.needsConfirmation, isTrue);
     });
 
     test('毛色置信度偏低时也要提示确认', () {

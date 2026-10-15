@@ -8,7 +8,6 @@
 // 归到 4 个物种后概率求和。ImageNet 有一百多个犬种，聚合后的置信度
 // 远高于 top-1 单类，且单类误判会被同类其他项稀释。
 import 'dart:async';
-import 'dart:io' show Platform;
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -125,15 +124,25 @@ class OnDeviceSpeciesDetector implements PetSpeciesDetector {
   }
 }
 
-/// 平台工厂：端侧优先，云端兜底。
+/// 平台工厂：**当前恒为「不识别」**。
 ///
-/// iOS 上跳过端侧 TFLite（与 pet_detector_io 同因：推理在 iOS 上触发
-/// native 崩溃），直接走云端兜底；识别不出时上层自动沿用当前物种参数，
-/// 不影响拍摄主流程。
-PetSpeciesDetector create() {
-  if (Platform.isIOS) return CloudSpeciesDetector();
-  return TieredSpeciesDetector(
-    OnDeviceSpeciesDetector(),
-    CloudSpeciesDetector(),
-  );
-}
+/// ## 为什么整个物种识别被停用
+///
+/// 产品已收敛为**只拍猫**，物种不再是"需要判断的变量"——它恒为
+/// [PetSpecies.cat]。识别带来的是纯成本，没有任何收益：
+///
+/// 1. **可靠性**：MobileNetV2 全类聚合在宠物特写上常常把猫判成狗
+///    （ImageNet 里犬种过多，短毛猫与某些犬类的特征高度相似），
+///    判错就直接套错物种参数；
+/// 2. **稳定性**：tflite_flutter 的推理在 iOS 上是native 崩溃
+///    （见 pet_detector_io 的同因说明），Android 上也要为每张照片多解一遍图；
+/// 3. **成本**：加载 4MB 模型 + 每张图一次全尺寸解码。
+///
+/// 真正决定"拍得好看"的那一项——**毛色**（白毛加曝光、黑毛减曝光）——
+/// 不需要模型：[PetCoatAnalyzer] 是纯颜色统计，纯 Dart、毫秒级、
+/// 没有崩溃面。这才是自动识别该保留的部分，现在它单独留在
+/// 「自动识别」按钮里。
+///
+/// 端侧与云端实现（[OnDeviceSpeciesDetector] / [CloudSpeciesDetector] /
+/// [TieredSpeciesDetector]）全部保留在代码里，等产品要扩到狗/兔时开回来即可。
+PetSpeciesDetector create() => const NoSpeciesDetector();

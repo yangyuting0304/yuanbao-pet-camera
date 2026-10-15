@@ -88,9 +88,14 @@ class PetAutoProfiler {
 
   /// 合成自动配置结果。
   ///
-  /// [speciesGuess] 为 null 表示没有可用的物种识别能力（例如网页端），
-  /// 此时沿用 [fallbackSpecies]，并把 `needsConfirmation` 置为 true ——
-  /// 物种没识别出来是确定的事实，必须让用户知道。
+  /// [speciesGuess] 为 null 表示没有可用的物种识别能力（当前产品只拍猫，
+  /// 识别已停用，见 `default_species_detector_io.create`），此时沿用
+  /// [fallbackSpecies]（即猫）。
+  ///
+  /// **物种识别缺失不再计入"需要确认"**：以前这里会因物种置信度为 0
+  /// 而永远返回 true，导致每次都弹"请确认物种"——可产品只有猫一个选项，
+  /// 确认一个不会变的东西是纯粹的噪音。真正需要用户过目的只有毛色：
+  /// 曝光补偿完全由它决定，判错白毛/黑毛就会直接拍成灰毛。
   static PetAutoSetup resolve({
     required PetCoatAnalysis coat,
     PetSpeciesGuess? speciesGuess,
@@ -101,7 +106,8 @@ class PetAutoProfiler {
     final speciesConfidence = speciesGuess?.confidence ?? 0.0;
 
     final needsConfirmation =
-        coat.confidence < confirmBelow || speciesConfidence < confirmBelow;
+        coat.confidence < confirmBelow ||
+        (speciesGuess != null && speciesConfidence < confirmBelow);
 
     return (
       detectedSpecies: detected,
@@ -133,9 +139,11 @@ class PetAutoProfiler {
     required PetSpecies? detected,
     required PetCoatAnalysis coat,
   }) {
+    // 不提"未识别"：识别停用后物种是已知常量，说"没识别出来"会让用户
+    // 以为功能坏了。这里如实讲清"物种按猫处理，毛色是自动判断的"。
     final head = detected != null
         ? '识别到${detected.label}'
-        : '未识别出物种，暂按${species.label}参数';
+        : '已按${species.label}参数拍摄';
     return '$head；${coat.reason}（毛色置信度 ${(coat.confidence * 100).round()}%）';
   }
 }

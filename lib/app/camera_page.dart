@@ -33,8 +33,8 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       ? const Duration(milliseconds: 800)
       : const Duration(milliseconds: 250);
 
-  /// 自动识别的抓帧超时。takePicture 在个别机型上会长时间不返回，
-  /// 没有超时会让「识别中」永久卡住，用户连手动重试都点不动。
+  /// 毛色分析的抓帧超时。takePicture 在个别机型上会长时间不返回，
+  /// 没有超时会让「分析中」永久卡住，用户连手动重试都点不动。
   static const Duration _autoDetectTimeout = Duration(seconds: 10);
 
   /// 切到宠物模式后延迟多久再抓帧：等新控制器的预览首帧稳定。
@@ -108,21 +108,18 @@ class _CameraPageState extends ConsumerState<CameraPage> {
   /// 滤镜模板（风格）。默认"原色"，即只走物种/毛色算出的参数。
   PetLook _look = PetLook.natural;
 
-  // ───────────── 自动识别（减少用户选择） ─────────────
-  /// 自动识别进行中（抓帧 + 分析需要时间，给用户反馈）。
+  // ───────────── 自动识别毛色（减少用户选择） ─────────────
+  /// 毛色分析进行中（抓帧 + 分析需要时间，给用户反馈）。
   bool _autoDetecting = false;
-  /// 最近一次自动识别的结果，用于把"为什么这么判"讲给用户听。
+  /// 最近一次毛色判定的结果，用于把"为什么这么判"讲给用户听。
   PetAutoSetup? _lastAutoSetup;
   /// 物种识别器。
   ///
-  /// 原生端：端侧 TFLite（MobileNetV2 量化）优先——离线、即时、零流量；
-  /// 识别不出或异常时自动退自建代理（Key 在服务端）。Web 端直接云端。
-  /// 平台分流见 `default_species_detector.dart`。
-  ///
-  /// 任何失败都静默降级为"没识别出来"，由用户手选——不会报错、
-  /// 不影响拍照。
+  /// **当前恒为不可用**（`NoSpeciesDetector`）：产品已收敛为只拍猫，
+  /// 物种不再是变量；端侧 TFLite 在 iOS 上还会触发 native 崩溃。
+  /// 字段与工厂保留，是为了将来扩到狗/兔时能原样开回来。
   final PetSpeciesDetector _speciesDetector = createDefaultSpeciesDetector();
-  /// 宠物模式下是否已经自动识别过一次（避免每次切模式都抓帧）。
+  /// 宠物模式下是否已经自动分析过一次（避免每次切模式都抓帧）。
   bool _autoDetectedThisSession = false;
 
   /// 当前宠物参数集——物种 × 毛色 × 场景 × 滤镜模板。
@@ -450,8 +447,12 @@ class _CameraPageState extends ConsumerState<CameraPage> {
 
   /// 自动识别宠物并直接套用参数。
   ///
-  /// 流程：抓一帧（**不保存**，只用于分析）→ 本地毛色分析 → 物种识别（若可用）
-  /// → 合成参数集。目的是让用户「打开相机就能拍」，而不是从 4×5×5 个组合里自己挑。
+  /// 流程：抓一帧（**不保存**，只用于分析）→ 本地毛色分析 → 合成参数集。
+  /// 目的是让用户「打开相机就能拍」，而不是从毛色 × 场景 × 风格里自己挑。
+  ///
+  /// **不再做物种识别**：产品只拍猫，物种恒为 [PetSpecies.cat]；
+  /// 毛色才是真正因猫而异的变量（白毛加曝光、黑毛减曝光），
+  /// 而且它是纯颜色统计，不需要模型，没有崩溃面。
   ///
   /// 抓的这一帧只喂给分析，不会进相册，也不会触发滤镜。
   Future<void> _autoDetectPet() async {
@@ -470,10 +471,8 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         sampleTarget: 160,
       ));
 
-      // 物种识别走平台能力（ML Kit / 云端）。
-      // 未接入时 isAvailable 为 false，直接跳过——此时
-      // PetAutoProfiler 会沿用当前物种并标记"需要用户确认"，
-      // 这是如实告知，而不是假装识别成功。
+      // 物种识别已停用（_speciesDetector 恒不可用），这里只为将来扩物种
+      // 保留接口：可用时它会给出识别结果，不可用时沿用当前物种（猫）。
       PetSpeciesGuess? guess;
       if (_speciesDetector.isAvailable) {
         // width/height 传 0：ML Kit 这类实现用文件路径入参，
@@ -502,11 +501,11 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         ),
       );
     } catch (e) {
-      debugPrint('[自动识别] 失败：$e');
+      debugPrint('[毛色分析] 失败：$e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('自动识别失败，可在「宠物参数」里手动选择'),
+            content: Text('毛色分析失败，可在「什么毛色」里手动选'),
             duration: Duration(seconds: 3),
           ),
         );
@@ -1603,17 +1602,19 @@ class _CameraPageState extends ConsumerState<CameraPage> {
                               onTap: () => refreshSheetAsync(_autoDetectPet),
                             ),
                             const SizedBox(height: 16),
-                            const _CameraFieldLabel('拍谁'),
-                            _CameraChipRow(
-                              labels: [
-                                for (final s in PetSpecies.values)
-                                  '${s.emoji} ${s.label}',
-                              ],
-                              selectedIndex: _species.index,
-                              onSelect: (i) => refreshSheetAsync(
-                                () => _updatePetProfile(
-                                  species: PetSpecies.values[i],
-                                ),
+                            // 物种维度已收敛：**只拍猫**。
+                            //
+                            // 这里不再给选择器——只有一个选项时，选项本身
+                            // 就是噪音（用户永远只能选那一项，还要多点一次）。
+                            // 物种恒为 [PetSpecies.cat]，毛色与场景仍可调，
+                            // 那两项才是真正因猫而异的变量。
+                            const _CameraFieldLabel('拍摄对象'),
+                            Text(
+                              '${PetSpecies.cat.emoji} 猫咪（当前仅支持猫咪）',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                height: 20 / 13,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
                             const SizedBox(height: 12),
@@ -1769,13 +1770,13 @@ class _CameraPageState extends ConsumerState<CameraPage> {
               bottom: 148,
               child: Center(child: _CameraToast('宠物滤镜处理中…')),
             ),
-          // 自动识别中（切到宠物模式时会自动跑一次）。
+          // 自动分析毛色中（切到宠物模式时会自动跑一次）。
           if (_autoDetecting)
             const Positioned(
               left: 0,
               right: 0,
               bottom: 196,
-              child: Center(child: _CameraToast('正在识别宠物…')),
+              child: Center(child: _CameraToast('正在判断毛色…')),
             ),
           if (_recording)
             Positioned(
@@ -2798,10 +2799,10 @@ class _ExposureSlider extends StatelessWidget {
   }
 }
 
-/// 「自动识别」按钮 + 上次识别结果。
+/// 「自动识别毛色」按钮 + 上次判定结果。
 ///
-/// 这是"减少用户选择"的主入口：先替用户猜一次，用户只需确认或微调，
-/// 而不是从 4×5×5 个组合里自己挑。
+/// 这是"减少用户选择"的主入口：先替用户猜一次毛色，用户只需确认或微调。
+/// 物种不再参与——产品已收敛为只拍猫，恒定值不值得让用户确认。
 class _AutoDetectButton extends StatelessWidget {
   const _AutoDetectButton({
     required this.busy,
@@ -2829,7 +2830,7 @@ class _AutoDetectButton extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
             ),
             child: Text(
-              busy ? '识别中…' : '自动识别我的宠物',
+              busy ? '正在分析…' : '自动判断毛色',
               style: const TextStyle(
                 fontSize: 14,
                 height: 22 / 14,

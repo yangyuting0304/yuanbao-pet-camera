@@ -79,9 +79,14 @@ flutter:
     - assets/sounds/
     # 首页与主导航统一使用 MingCute SVG 图标资源
     - assets/icons/mingcute/
-    # 端侧物种识别模型（MobileNetV2 量化版 3.4MB）与 ImageNet 标签表。
-    # 来源：google-coral/test_data 与 tensorflow/tensorflow 官方仓库。
-    - assets/models/
+    # 端侧**实时宠物检测**模型（EfficientDet-Lite0 320，4.35MB）：
+    # 宠物模式下逐帧检测主体位置，用来驱动追焦与滤镜的主体分区。
+    # 来源：google-coral/test_data。
+    - assets/models/efficientdet_lite0_320.tflite
+    # 端侧**物种识别**的 MobileNetV2 量化版（3.44MB）+ ImageNet 标签表
+    # 已随"只拍猫"收敛**移出安装包**（见 default_species_detector_io.create）。
+    # 文件仍保留在仓库里：将来扩到狗/兔时，把这两行加回 assets 并把工厂
+    # 改回 TieredSpeciesDetector 即可（iOS 端还需先解掉 TFLite native 崩溃）。
     # 品牌字体：这里只当普通资源打包，不在 flutter.fonts 里声明。
     # 声明在 fonts 下时，Flutter Web 会等字体下载完才渲染首帧（3.5 MB 曾拖到
     # 28 秒）；改为运行时 FontLoader 注册后首屏不再被字体阻塞，
