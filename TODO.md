@@ -176,7 +176,58 @@ scp -r build/yuanbao-pet-camera root@<ECS_IP>:/www/wwwroot/yangyuting.cloud/   #
 
 ---
 
-## 六、待你决策的事项
+## 六、iOS 端待办与决策（2026-10-15 整理）
+
+> 本节只讲 iOS。Android 端的拍摄链路（含端侧宠物检测）已验证可用。
+
+### 7.1 已修复：拍照闪退（三轮定位）
+
+| 轮次 | 现象 | 根因 | 处理 |
+|---|---|---|---|
+| 1 | 点「宠物」标签瞬间闪退回桌面 | 切模式时先建新控制器再 dispose 旧的，Camerax/AVFoundation 单会话约束下必失败 | 先 dispose + 延迟（iOS 800ms / Android 250ms） |
+| 2 | 进宠物模式后未拍照就闪退 | `tflite_flutter` 推理在 iOS 上触发 native 崩溃 | iOS 禁端侧实时检测与物种识别、禁动态短片 |
+| 3 | 点快门闪退 | **`ResolutionPreset.max` 在 AVFoundation 上会把 `activeFormat` 换成像素最高的 format**（iPhone 上= 48MP），而本App 出片链路是纯 Dart 逐像素处理，单帧 RGBA≈192MB，三四张就被 jetsam 杀掉 | `CaptureQuality.effectivePreset` 在 iOS 把「超清」封顶 `veryHigh`（≈12MP）；连拍封顶 3 张 |
+
+顺带修掉：`camera 0.12.1` + `camera_avfoundation 0.10.3+1`（0.9.x 用废弃的
+`isHighResolutionCaptureEnabled` 处理 max）。
+
+### 7.2 未修复：iOS 端侧推理（自动追焦）—— 需要真机日志
+
+iOS 上宠物模式**没有自动追焦与主体分区**，只能点按对焦。原因与已排除的路线：
+
+| 试过的路子 | 结果 |
+|---|---|
+| 改 Strip Style / 保留符号 | 无效 → 不是符号可见性问题 |
+| 升级 `tflite_flutter` 0.11.0 → 0.12.1（最新版） | 无效 → 两版 `ios/tflite_flutter.podspec` 逐字节相同，仍固定依赖 `TensorFlowLiteSwift 2.12.0` |
+| 换 Google 官方 `litert` 包 | 不存在 → pub.dev 上 `litert` 返回 404；社区替代（flutter_litert 20 star、tflite_plus 6 star）体量不足以替换生产依赖 |
+
+**结论：没有真机崩溃日志之前这条路走不通**，不要再猜。
+
+**恢复步骤（需要你配合）**：
+
+1. 云构建一个带开关的验证包（开关只为复现用，发布包不带）：
+   ```bash
+   flutter build ipa --dart-define=IOS_TFLITE_ENABLED=true
+   ```
+   开关定义见 `lib/data/app_env.dart` 的 `AppEnv.iosTfliteEnabled`，
+   生效点见 `lib/data/pet_detector_io.dart` 的 `isAvailable`。
+2. 装到 iPhone 上，进宠物模式复现闪退。
+3. 拿到崩溃日志（Xcode → Window → Devices and Simulators → 选设备 →
+   View Device Logs，或用 `idevicesyslog`），把崩溃栈发我。
+4. 按栈顶帧对症下药；跑通后把 `iosTfliteEnabled` 默认值改成 `true` 正式启用。
+
+### 7.3 iOS 上的既有功能取舍（当前状态，均为"能拍/能存"优先）
+
+| 功能 | iOS 现状 | Android |
+|---|---|---|
+| 端侧实时宠物检测（追焦、主体分区） | 关（7.2） | 开 |
+| 端侧物种识别 | 已随「只拍猫」停用 | 同样停用 |
+| 动态照片（Live Photo） | 关（拍照会话上录短片是闪退嫌疑） | 开 |
+| 画质档位 | 「超清」封顶 12MP | 「超清」=max |
+
+---
+
+## 六、待你决策的事项（iOS 相关见上一节）
 
 1. **P0-4 定时任务的频率 / 范围 / 凭据来源**（上一轮提问尚未回答）。
 2. **P2-1 缩略图方案**：本地生成 vs 数据万象 CI。

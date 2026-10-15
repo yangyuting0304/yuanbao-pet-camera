@@ -12,6 +12,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:tflite_flutter/tflite_flutter.dart';
 
+import 'app_env.dart';
 import 'pet_detector.dart';
 
 const String _modelAsset = 'assets/models/efficientdet_lite0_320.tflite';
@@ -99,14 +100,34 @@ class _DetectorImpl {
   }
 }
 
-/// iOS 上禁用端侧实时检测。
+/// 实时宠物检测是否启用。
 ///
-/// 宠物模式帧流每秒约 5 次调 TFLite（EfficientDet）推理，在 iOS 上触发
-/// native 崩溃——切模式闪退修复后，实拍崩溃点后移为「进宠物模式后未拍照
-/// 就闪退」，正是这里。禁用后宠物模式退回点按对焦，先保可用；Android
-/// 不受影响。等升级 tflite_flutter / 拿到崩溃日志定位到具体原因后再恢复。
-bool get isAvailable =>
-    !Platform.isIOS && _DetectorImpl.instance.isAvailable;
+/// Android 恒为 true。
+///
+/// iOS 默认**关**：宠物模式帧流每秒约 5 次调 TFLite（EfficientDet）推理，
+/// 在 iOS 上触发 native 崩溃——切模式闪退修复后，实拍崩溃点后移为
+/// 「进宠物模式后未拍照就闪退」，正是这里。关掉时宠物模式退回点按对焦，
+/// 先保「绝不闪退」这条底线。
+///
+/// ## 已经试过、都没能解决它的路子（别再走一遍）
+///
+/// 1. **改 Strip Style / 符号保留**——无效，说明不是符号可见性问题；
+/// 2. **升级 tflite_flutter 到 0.12.1**（当前最新版）——无效：两版的
+///    `ios/tflite_flutter.podspec` 逐字节相同，iOS 侧固定依赖
+///    `TensorFlowLiteSwift 2.12.0`，换 Dart 包并不会换掉那个 CocoaPods 依赖；
+/// 3. **换 Google 官方 `litert` 包**——不存在：pub.dev 上 `litert` 404，
+///    社区替代品（flutter_litert 20 star、tflite_plus 6 star）体量与维护度
+///    都不足以替换生产依赖。
+///
+/// 也就是说：**在没有真机崩溃日志之前，这条路是走不通的**，
+/// 剩下的唯一低风险路径是拿到日志（云构建验证包复现 → Xcode 符号化）
+/// 再对症下药。所以这里保留编译期开关，只为让那条验证包能跑起来。
+///
+/// 打开方式：`--dart-define=IOS_TFLITE_ENABLED=true`，详见 [AppEnv.iosTfliteEnabled]。
+bool get isAvailable {
+  if (Platform.isIOS && !AppEnv.iosTfliteEnabled) return false;
+  return _DetectorImpl.instance.isAvailable;
+}
 
 Future<List<PetDetection>> detect(Uint8List rgb) =>
     _DetectorImpl.instance.detect(rgb);

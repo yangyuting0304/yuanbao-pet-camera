@@ -58,4 +58,22 @@ class AppEnv {
     'PET_SPECIES_PROXY_URL',
     defaultValue: '$_kProdProxyRoot/api/pet-species',
   );
+
+  /// 是否在 **iOS** 上启用端侧 TFLite（实时宠物检测 → 自动追焦）。
+  ///
+  /// 默认**关**，因为 tflite_flutter 的推理在 iOS 上会触发 native 崩溃
+  /// （三条已试过且都无效的路线记在 pet_detector_io.isAvailable 的注释里）。
+  /// 关掉时宠物模式退回点按对焦，换来「绝不闪退」这条底线。
+  ///
+  /// 打开它只为**真机验证**：iOS 侧的崩溃必须用实机跑才知道成没成，
+  /// 而发到 App Store 的包绝不能带这个风险。因此做成编译期开关——
+  /// 云构建验证包带上它，复现崩溃拿到日志后才谈正式启用：
+  ///
+  /// ```bash
+  /// flutter build ipa --dart-define=IOS_TFLITE_ENABLED=true
+  /// ```
+  static const bool iosTfliteEnabled = bool.fromEnvironment(
+    'IOS_TFLITE_ENABLED',
+    defaultValue: false,
+  );
 }

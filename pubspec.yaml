@@ -41,9 +41,15 @@ dependencies:
   # native 崩溃/行为异常（实拍反馈：点快门直接闪退回桌面）。0.10.3 起改用
   # maxPhotoDimensions 并修复 max 档 HEIF 忽略分辨率的问题。
   camera_avfoundation: ^0.10.3+1
-  # 端侧物种识别（LiteRT/TFLite，MobileNetV2 量化 ImageNet 分类）。
+  # 端侧推理（LiteRT/TFLite）。当前只用于实时宠物检测（EfficientDet），
+  # 物种识别已随「只拍猫」停用（见 default_species_detector_io.create）。
+  # 0.12.1 是当前最新版（2025-10），Dart 侧 API 与 0.11.0 兼容，已实测
+  # analyze 零 error。注意它**并不解决 iOS 崩溃**：两版的 ios podspec
+  # 逐字节相同，iOS 侧仍固定依赖 TensorFlowLiteSwift 2.12.0
+  # （换 Dart 包不换 CocoaPods 依赖）。iOS 要恢复端侧推理得换路线
+  # （Google 官方 litert 插件），详见 pet_detector_io.isAvailable 的说明。
   # 仅 Android/iOS 可用；Web 构建靠条件导入隔离（default_species_detector_*.dart）。
-  tflite_flutter: ^0.11.0
+  tflite_flutter: ^0.12.1
   # 切片D 宠物滤镜：JPEG 编解码 + 像素级后处理。
   # dart:ui 只能编码 PNG（12MP 会到几十 MB，无法上传），必须靠它出 JPEG。
   image: ^4.3.0
