@@ -46,6 +46,9 @@ Uint8List _fuse(List<Uint8List> frames) =>
 
 FusionPickResult _fuseWithPick(List<Uint8List> frames) => fuseFramesWithPick((
   frames: frames,
+  preDecoded: null,
+  preWidth: 0,
+  preHeight: 0,
   maxSide: _size,
   jpegQuality: 96,
   sampleTarget: 320,

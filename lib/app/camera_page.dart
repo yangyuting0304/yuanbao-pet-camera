@@ -914,11 +914,46 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     }
 
     try {
+      // ── 先在主 isolate 把每帧缩到统一尺寸，再零拷贝移交进 isolate ──
+      //
+      // 不做这一步的话，融合会在 isolate 里用纯 Dart `img.decodeImage` 解
+      // **全尺寸** JPEG：iOS 上可能是 48MP（activeFormat 决定）→ 单帧
+      // 192MB、每帧还要几秒。这既是「连拍非常慢」的大头，也是 jetsam
+      // 杀进程（闪退）的主因。
+      //
+      // 用引擎原生解码器（ImageIO 缩略解码）后：解码快一个数量级，峰值
+      // 内存只跟目标尺寸有关。移交用 TransferableTypedData 零拷贝 ——
+      // compute 默认会复制参数，3 帧 3000px 就是 81MB 复制，
+      // 正好抵消掉省下来的内存。
+      final maxSide = kIsWeb ? 1800 : _fusionMaxSide;
+      final first = await decodeRgbaLimited(frames.first, maxSide);
+      List<TransferableTypedData>? preDecoded;
+      var preWidth = 0;
+      var preHeight = 0;
+      if (first != null) {
+        preWidth = first.width;
+        preHeight = first.height;
+        final packed = <TransferableTypedData>[];
+        for (var i = 0; i < frames.length; i++) {
+          // 统一解到第一帧的尺寸：融合要求所有帧严格同尺寸。
+          final decoded =
+              await decodeRgbaToSize(frames[i], preWidth, preHeight) ??
+              (i == 0 ? first : null);
+          if (decoded == null) continue;
+          // 转成可移交的缓冲后立刻丢掉这份像素引用，主 isolate 不累积。
+          packed.add(TransferableTypedData.fromList([decoded.rgba]));
+        }
+        preDecoded = packed;
+      }
+
       // 加超时：这两步此前**没有任何上限**，一旦卡住就是"永远正在拍摄中"
       // （快门被 _capturing 锁死，用户只能杀掉页面）。
       final result = await compute(fuseFramesWithPick, (
         frames: frames,
-        maxSide: kIsWeb ? 1800 : _fusionMaxSide,
+        preDecoded: preDecoded,
+        preWidth: preWidth,
+        preHeight: preHeight,
+        maxSide: maxSide,
         jpegQuality: PetFilter.defaultJpegQuality,
         sampleTarget: 320,
       )).timeout(const Duration(seconds: 25));
@@ -1278,7 +1313,20 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     ui.Picture? picture;
     ui.Image? composed;
     try {
-      codec = await ui.instantiateImageCodec(bytes);
+      // 限尺寸解码：这里只做「裁切 + 加边框」，最终输出的长边本来就被
+      // [PetFilter.defaultMaxSide] 封着，所以原图再大也没意义——
+      // 而不限制的话，iOS 上可能一次把 48MP 全解进内存（≈200MB），
+      // 滤镜关闭时（直接喂原图）尤其明显。
+      //
+      // 注意 targetWidth 只给一个：引擎会按原比例推 height，
+      // 比例不变，裁切与加边的计算完全不受影响。
+      final sourceLongSide = jpegLongSide(bytes) ?? 0;
+      final cappedLongSide = sourceLongSide > PetFilter.defaultMaxSide
+          ? PetFilter.defaultMaxSide
+          : sourceLongSide;
+      codec = cappedLongSide > 0
+          ? await ui.instantiateImageCodec(bytes, targetWidth: cappedLongSide)
+          : await ui.instantiateImageCodec(bytes);
       final frame = await codec.getNextFrame();
       final sourceImage = frame.image;
       source = sourceImage;

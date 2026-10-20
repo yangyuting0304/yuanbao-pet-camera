@@ -80,6 +80,37 @@ Future<({Uint8List rgba, int width, int height})?> decodeRgbaLimited(
   }
 }
 
+/// 把 JPEG 解码成**指定尺寸**的 RGBA 像素。
+///
+/// 与 [decodeRgbaLimited] 的区别：这里给的是**精确**目标宽高，不是「长边上限」。
+/// 多帧融合要求所有帧尺寸完全一致（否则没法逐像素对齐），所以先按第一帧
+/// 定好尺寸、其余帧一律解到同一尺寸——原生解码器（ImageIO）直接输出目标
+/// 尺寸，比在 isolate 里解完再 copyResize 更快也更省。
+Future<({Uint8List rgba, int width, int height})?> decodeRgbaToSize(
+  Uint8List jpeg,
+  int width,
+  int height,
+) async {
+  if (jpeg.isEmpty || width <= 0 || height <= 0) return null;
+  try {
+    final codec = await ui.instantiateImageCodec(
+      jpeg,
+      targetWidth: width,
+      targetHeight: height,
+    );
+    final frame = await codec.getNextFrame();
+    final image = frame.image;
+    final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    image.dispose();
+    codec.dispose();
+    final rgba = data?.buffer.asUint8List();
+    if (rgba == null) return null;
+    return (rgba: rgba, width: width, height: height);
+  } catch (_) {
+    return null;
+  }
+}
+
 /// 兜底：纯 Dart 解码 + 缩放。
 ///
 /// 只在原生解码器不可用（个别 Web 环境）或抛异常时才会走到。
@@ -114,6 +145,16 @@ Future<({Uint8List rgba, int width, int height})?> decodeRgbaLimited(
   } catch (_) {
     return null;
   }
+}
+
+/// 读 JPEG 的长边像素数（只解析文件头，不解像素）。
+///
+/// 用来决定"要不要限尺寸解码"——不知道原图多大就没法判断。
+/// 解析失败返回 null（调用方按"不限制"处理）。
+int? jpegLongSide(Uint8List jpeg) {
+  final size = _jpegSize(jpeg);
+  if (size == null) return null;
+  return math.max(size.$1, size.$2);
 }
 
 /// 从 JPEG 文件头解析宽高（**只读 marker，不解像素**）。

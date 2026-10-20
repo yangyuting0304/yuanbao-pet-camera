@@ -305,6 +305,26 @@ dart run tools/filter_lab/preview.dart <实拍图.jpg> <输出目录> current su
 后三处在 iOS 上因为输出已被压到 12MP（48MB/张）而可以接受；
 **Android 上的 48MP/108MP 机型仍有风险**，是下一批要做的。
 
+### 根因 2 的收尾：三处全尺寸解码已修（2026-10-20 续）
+
+| 消费点 | 修法 |
+|--------|------|
+| 多帧融合 `fuseFramesWithPick` | 主 isolate 用原生解码器把每帧解到统一尺寸，`TransferableTypedData` **零拷贝**移交进 isolate；isolate 内不再碰全尺寸 JPEG |
+| 成片比例合成 `_composePhotoToSelectedRatio` | `ui.instantiateImageCodec` 加上 `targetWidth`（原本无参数 = 全尺寸解码） |
+| 连拍选帧 `burst_selector` | 选帧早已并入 `fuseFramesWithPick`；顶层入口无调用者，已在文件头标注现状（`scoreSharpness` 仍被融合调用） |
+
+关键细节：
+
+- **为什么用 `TransferableTypedData`**：compute 默认会把参数**复制**一份，
+  3 帧 3000px 的 RGBA 就是 81MB 复制 —— 正好抵消掉限尺寸省下的内存。
+- **两条融合通路必须同源**：预解码通路的灰度图计算（`_graySmallFromRgba`）
+  与旧路径的 `_graySmall` 用同样的 copyResize average 插值，否则对齐结果
+  会不同，同一批照片会因走哪条路产出不同成片。融合数学本体
+  （`_fusePlanes`）完全共用，不存在第二份实现。
+- **新增防线** `test/frame_fusion_predecoded_test.dart`：预解码通路出片尺寸
+  正确、与旧路径**画质相当**（拉普拉斯方差 ≥ 旧路径 75%）、尺寸不匹配的
+  帧被安全跳过。
+
 ### 根因 3：历史照片 200 张全量常驻
 
 `loadAll()` 把最多 200 张成片的字节**全部读进内存**（1~3MB/张 → 200~600MB 常驻）。

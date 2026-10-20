@@ -19,6 +19,7 @@
 /// 这一条决定了融合到底是"提升画质"还是"毁片"。
 library;
 
+import 'dart:isolate' show TransferableTypedData;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -379,6 +380,25 @@ Uint8List _fusePlanes(
 /// 选帧 + 融合的合并任务（compute 要求可跨 isolate 传递，只用基本类型）。
 typedef FusionPickRequest = ({
   List<Uint8List> frames,
+
+  /// **预解码帧**（可选）：调用方在主 isolate 用原生解码器把每帧缩到
+  /// [preWidth]×[preHeight] 后，用 [TransferableTypedData] 零拷贝移交进来的
+  /// RGBA 像素。
+  ///
+  /// 为什么需要这条通路：iOS 上相机输出可能是 48MP（activeFormat 决定），
+  /// isolate 里的 `img.decodeImage` 是纯 Dart 全尺寸解码 —— 单帧 192MB、
+  /// 每帧还要几秒（这正是「连拍非常慢」与 jetsam 闪退的来源）。
+  /// 交给主 isolate 的原生解码器（ImageIO 缩略解码）后：
+  /// ① 解码快一个数量级；② 峰值内存只跟目标尺寸有关。
+  ///
+  /// 移交用 TransferableTypedData 而不是普通 List：compute 默认会**复制**
+  /// 参数，3 帧 3000px 的 RGBA 就是 81MB 的复制，正好抵消掉省下的内存。
+  List<TransferableTypedData>? preDecoded,
+
+  /// [preDecoded] 里每帧的宽高（像素）。
+  int preWidth,
+  int preHeight,
+
   /// 输出长边上限。
   int maxSide,
   int jpegQuality,
@@ -401,8 +421,117 @@ typedef FusionPickResult = ({Uint8List bytes, int pickedIndex, int total});
 ///
 /// 另外只保留最清晰的 [_maxFusionFrames] 帧：融合本来也只吃这么多，
 /// 多留的平面每帧就是几十 MB 白占（10 连拍时旧实现会同时驻留 10 片）。
+/// 预解码帧通路的融合。
+///
+/// 输入是调用方在主 isolate 用原生解码器备好的 RGBA 像素（统一尺寸），
+/// 这里只做「打分 + 留平面 + 融合」三件事 —— 融合数学与 [fuseFramesWithPick]
+/// 的旧路径**完全共用** [_fusePlanes]，不允许存在第二份实现。
+FusionPickResult _fusePreDecoded(
+  FusionPickRequest req,
+  List<TransferableTypedData> preDecoded,
+) {
+  final targetW = req.preWidth;
+  final targetH = req.preHeight;
+  if (targetW < 8 || targetH < 8) {
+    return (bytes: req.frames.first, pickedIndex: 0, total: req.frames.length);
+  }
+  final grayW = math.max(8, targetW ~/ 8);
+  final grayH = math.max(8, targetH ~/ 8);
+
+  final planes = <Uint8List>[];
+  final grays = <Uint8List>[];
+  final scores = <double>[];
+  final sources = <int>[];
+
+  /// 收一帧（已是目标尺寸的 RGBA 平面）。
+  void absorb(Uint8List plane, int sourceIndex) {
+    final score = BurstSelector.scoreSharpness(
+      plane,
+      width: targetW,
+      height: targetH,
+      sampleTarget: req.sampleTarget,
+    );
+    if (planes.length < _maxFusionFrames) {
+      planes.add(plane);
+      grays.add(_graySmallFromRgba(plane, targetW, targetH, grayW, grayH));
+      scores.add(score);
+      sources.add(sourceIndex);
+      return;
+    }
+    // 已满：只有比手上最差的那帧更清晰才顶替它。
+    var worst = 0;
+    for (var i = 1; i < scores.length; i++) {
+      if (scores[i] < scores[worst]) worst = i;
+    }
+    if (score <= scores[worst]) return;
+    planes[worst] = plane;
+    grays[worst] = _graySmallFromRgba(plane, targetW, targetH, grayW, grayH);
+    scores[worst] = score;
+    sources[worst] = sourceIndex;
+  }
+
+  for (var i = 0; i < preDecoded.length; i++) {
+    Uint8List pixels;
+    try {
+      pixels = preDecoded[i].materialize().asUint8List();
+    } catch (_) {
+      continue;
+    }
+    // 尺寸对不上就跳过：融合要求所有帧严格同尺寸。
+    if (pixels.length != targetW * targetH * 4) continue;
+    absorb(pixels, i);
+  }
+
+  // 一帧可用（或全不可用）时不重编码：原图字节就是最好的结果。
+  if (planes.length < 2) {
+    return (bytes: req.frames.first, pickedIndex: 0, total: req.frames.length);
+  }
+
+  // 把最清晰的一帧换到首位当参考帧——只换 List 引用，不做任何拷贝。
+  var best = 0;
+  for (var i = 1; i < scores.length; i++) {
+    if (scores[i] > scores[best]) best = i;
+  }
+  if (best != 0) {
+    void swapAt<T>(List<T> list) {
+      final t = list[0];
+      list[0] = list[best];
+      list[best] = t;
+    }
+
+    swapAt(planes);
+    swapAt(grays);
+    swapAt(scores);
+    swapAt(sources);
+  }
+
+  return (
+    bytes: _fusePlanes(planes, grays, targetW, targetH, req.jpegQuality),
+    pickedIndex: sources.first,
+    total: req.frames.length,
+  );
+}
+
+/// 由 RGBA 平面算小灰度图（对齐用的 1/8 尺度）。
+///
+/// 与 [_graySmall] 的差别只是输入形态：一个拿 img.Image，一个拿已解码好的
+/// 像素平面。缩放方式必须一致（都用 copyResize 的 average 插值），
+/// 否则两条通路的**对齐结果**会不同——那会让同一批照片因走哪条路而
+/// 产出不同的成片。
+Uint8List _graySmallFromRgba(Uint8List rgba, int w, int h, int gw, int gh) {
+  final image = img.Image.fromBytes(
+    width: w,
+    height: h,
+    bytes: rgba.buffer,
+    numChannels: 4,
+    order: img.ChannelOrder.rgba,
+  );
+  return _graySmall(image, gw, gh);
+}
+
 FusionPickResult fuseFramesWithPick(FusionPickRequest req) {
   final frames = req.frames;
+  final preDecoded = req.preDecoded;
   if (frames.isEmpty) {
     return (bytes: Uint8List(0), pickedIndex: 0, total: 0);
   }
@@ -410,6 +539,16 @@ FusionPickResult fuseFramesWithPick(FusionPickRequest req) {
     return (bytes: frames.first, pickedIndex: 0, total: 1);
   }
 
+  // ── 通路 A：预解码帧（主 isolate 已用原生解码器缩到统一尺寸） ──
+  //
+  // 走这条时，帧像素已经由调用方备好（原生解码器，ImageIO 缩略路径）：
+  // 不用在 isolate 里碰 48MP 全尺寸解码，速度与内存都更好。
+  if (preDecoded != null && preDecoded.isNotEmpty) {
+    return _fusePreDecoded(req, preDecoded);
+  }
+
+  // ── 通路 B：自己解（没有预解码帧时的兼容路径） ──
+  //
   // **逐帧解码 → 提取平面/灰度 → 立刻释放**。不能"先全解码再统一尺寸"：
   // 相机原图 4000×3000 时单帧就占约 48MB，五帧 240MB——顶穿进程内存上限。
   img.Image? first;

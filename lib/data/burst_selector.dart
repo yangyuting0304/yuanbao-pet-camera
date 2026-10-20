@@ -7,6 +7,15 @@
 ///
 /// 打分前先在原图上按步长抽样成小灰度图，评价清晰度并不需要全分辨率，
 /// 这样 5 张 2400px 的图也只需要几十毫秒。
+///
+/// ## 当前状态：算法还活着，入口换人了
+///
+/// 真正的选帧已经并入 `fuseFramesWithPick`（选帧 + 融合一次解码完成，
+/// 同一份像素上既打分又留作融合平面）。所以：
+/// - [BurstSelector.scoreSharpness] 仍在被 frame_fusion 直接调用——**它活着**；
+/// - 顶层入口 [runBurstSelection] 与 [BurstSelector.pickBest] **当前没有调用者**，
+///   保留是因为这套打分与"取最清晰一帧"的语义仍被测试当契约守着，
+///   将来若要恢复"只选帧不融合"的轻量路径，代码还在。
 library;
 
 import 'dart:math' as math;
