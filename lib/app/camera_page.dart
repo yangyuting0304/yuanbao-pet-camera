@@ -465,11 +465,29 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       final shot = await c.takePicture().timeout(_autoDetectTimeout);
       final bytes = await shot.readAsBytes();
 
-      // 毛色分析放 isolate（网页端 compute 会退化为同步执行）。
-      final coat = await compute(runPetCoatAnalysis, (
-        bytes: bytes,
-        sampleTarget: 160,
-      ));
+      // 毛色分析只需要 160px 的采样，所以**先缩再解**：用原生解码器把图缩到
+      // 320px 长边再进 isolate。
+      //
+      // 这一步过去是「全尺寸解码 + 纯 Dart 统计」：iOS 上那张图可能是 48MP，
+      // 解成 RGBA 就是 192MB、耗时好几秒——而它偏偏在**切到宠物模式时**
+      // 自动触发，用户体感就是「一进拍照模式就卡住」。
+      final small = await decodeRgbaLimited(bytes, 320);
+      final coat = small == null
+          ? const (
+              coat: PetCoat.tabby,
+              confidence: 0.0,
+              meanLuma: 0.5,
+              lightFraction: 0.0,
+              darkFraction: 0.0,
+              saturation: 0.0,
+              reason: '图像解码失败，已回退到通用参数',
+            )
+          : await compute(runPetCoatAnalysis, (
+              rgba: small.rgba,
+              width: small.width,
+              height: small.height,
+              sampleTarget: 160,
+            ));
 
       // 物种识别已停用（_speciesDetector 恒不可用），这里只为将来扩物种
       // 保留接口：可用时它会给出识别结果，不可用时沿用当前物种（猫）。
@@ -946,8 +964,19 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         // 提示文案一个字都看不到。
         await Future<void>.delayed(const Duration(milliseconds: 16));
       }
+      // 主 isolate 里用**原生解码器**把图缩到目标长边再交给滤镜。
+      //
+      // 不做这一步的话，滤镜会在 isolate 里用纯 Dart 解全尺寸 JPEG：
+      // iOS 上那张图可能是 48MP（activeFormat 决定）→ 铺成 192MB RGBA，
+      // 既慢（用户说的「拍照模式很卡」）又会被 iOS 直接杀掉（闪退）。
+      // 原生解码器（ImageIO）走缩略解码路径，内存与耗时只跟目标尺寸有关。
+      final maxSide = kIsWeb ? 1800 : PetFilter.defaultMaxSide;
+      final limited = await decodeRgbaLimited(raw, maxSide);
+      final effective = limited == null
+          ? request
+          : PetFilter.withRgba(request, limited.rgba, limited.width, limited.height);
       // 同融合：没有超时的话，一次慢到极致的调色会把快门永久锁死。
-      return await compute(runPetFilter, request).timeout(
+      return await compute(runPetFilter, effective).timeout(
         const Duration(seconds: 25),
       );
     } catch (e) {

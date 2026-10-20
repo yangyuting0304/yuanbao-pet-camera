@@ -43,4 +43,67 @@ post_install do |installer|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
     end
   end
+
+  patch_ios_photo_size_cap(installer.sandbox.root)
+end
+
+# ── 元宝拍拍 iOS 补丁：把照片输出上限压到 12MP ───────────────────────
+#
+# ## 为什么必须打这个补丁
+#
+# iOS 上 takePicture 的输出尺寸由 AVCaptureDevice 的 **activeFormat** 决定，
+# 而 camera_avfoundation 无论用哪个 ResolutionPreset 都**只改 session preset**
+# （.veryHigh → .hd1920x1080），不会改 activeFormat；它的
+# configureMaxPhotoDimensions() 又会**无条件**把
+# capturePhotoOutput.maxPhotoDimensions 设成该 format 支持的最大值。
+#
+# 结果就是：iPhone 14 Pro Max 这类机型上，**无论选哪档，拍出来都是 48MP**。
+#
+# 48MP 的代价是致命的：出片链路里每个消费点都要把它解成 RGBA（192MB），
+# 连拍 3 张就是 600MB 峰值 —— iOS 直接 jetsam 杀进程（闪退）；
+# 纯 Dart 的 JPEG 解码还要 3~8 秒（用户说的「拍照模式很卡」）。
+#
+# 这里把上限压到 12MP（与 iPhone 系统相机默认一致）：像素数降到 1/16，
+# 内存峰值与解码耗时同步下降，画质与系统相机持平。
+#
+# ## 为什么是「从支持的尺寸里挑」而不是硬编码 4032×3024
+#
+# AVCapturePhotoOutput.maxPhotoDimensions 只能设成当前 active format
+# **确实支持**的尺寸，赋不支持的值会抛 Objective-C 异常（Swift 侧不可捕获）
+# ——那就把「闪退」换了个地方发生。所以这里的做法是：先取该 format 支持的
+# 全部照片尺寸，筛掉超过 12MP 的，再取其中最大的一个。必然受支持。
+#
+# ## 失效怎么办
+#
+# 插件升级后这段 Swift 可能变样，补丁就会打不上（会打印警告）。Dart 侧另有
+# 「限尺寸解码」作为纵深防御（lib/data/image_decode.dart），双保险。
+def patch_ios_photo_size_cap(sandbox_root)
+  plugin_dir = File.join(sandbox_root, 'camera_avfoundation')
+  patched = false
+
+  Dir.glob(File.join(plugin_dir, '**', 'DefaultCamera.swift')).each do |file|
+    src = File.read(file)
+    # 用正则而不是逐字符匹配：Podfile 在 Windows 上可能是 CRLF，而插件源码
+    # 来自 pub cache 通常是 LF —— 逐字符匹配会永远打不上补丁。正则里的 \s*
+    # 对换行符不敏感，两种行尾都能命中。
+    pattern = /if let maxSupportedDimensions = captureDevice\.flutterActiveFormat\.supportedMaxPhotoDimensions\s*\.max\(by: \{ Int64\(\$0\.width\) \* Int64\(\$0\.height\) < Int64\(\$1\.width\) \* Int64\(\$1\.height\) \}\)\s*\{\s*capturePhotoOutput\.maxPhotoDimensions = maxSupportedDimensions\s*\}/
+    replacement = <<-'SWIFT'.gsub(/\r\n/, "\n")
+      let supportedPhotoDimensions = captureDevice.flutterActiveFormat.supportedMaxPhotoDimensions
+      let cappedPhotoDimensions = supportedPhotoDimensions
+        .filter { Int64($0.width) * Int64($0.height) <= Int64(4032) * Int64(3024) }
+        .max(by: { Int64($0.width) * Int64($0.height) < Int64($1.width) * Int64($1.height) })
+      if let maxSupportedDimensions = cappedPhotoDimensions ?? supportedPhotoDimensions.max(by: { Int64($0.width) * Int64($0.height) < Int64($1.width) * Int64($1.height) }) {
+        capturePhotoOutput.maxPhotoDimensions = maxSupportedDimensions
+      }
+    SWIFT
+    next unless src.match(pattern)
+    File.write(file, src.sub(pattern, replacement))
+    patched = true
+    puts '[元宝拍拍] 已把 iOS 照片输出上限压到 12MP：' + file
+  end
+
+  unless patched
+    puts '[元宝拍拍] 警告：未能在 camera_avfoundation 里找到需要打补丁的代码，' \
+         'iOS 照片输出可能仍是 48MP。详见 ios/Podfile 的注释与 TODO.md。'
+  end
 end

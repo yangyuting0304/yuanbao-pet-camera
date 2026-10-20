@@ -770,6 +770,23 @@ class PetFilterKernel {
 /// 直接传 [PetCaptureProfile] 会因为不是可发送类型而在原生端抛异常。
 typedef PetFilterRequest = ({
   Uint8List bytes,
+
+  /// **已限尺寸解码**的 RGBA 像素（可选）。
+  ///
+  /// 非 null 时表示调用方已经在主 isolate 用原生解码器把图缩到
+  /// [maxSide] 并解成像素了，[runPetFilter] 直接拿它开工，不再全尺寸解码。
+  ///
+  /// 为什么需要这条通路：iOS 上相机输出可能是 48MP（activeFormat 决定，
+  /// 任何 ResolutionPreset 都改不了），纯 Dart 的 `img.decodeImage` 会把它
+  /// 铺成 192MB 的 RGBA —— 这既是「拍照模式很卡」的主因，也是 iOS 上
+  /// jetsam 杀进程（闪退）的主因。原生解码器（dart:ui）支持
+  /// targetWidth，能直接产出目标尺寸，内存与耗时只跟目标尺寸有关。
+  Uint8List? rgba,
+
+  /// [rgba] 对应的宽高（像素）。
+  int width,
+  int height,
+
   double exposure,
   double tempShift,
   double shadowLift,
@@ -826,28 +843,53 @@ Uint8List encodeJpegFromTransferable((TransferableTypedData, int, int) args) {
 ///
 /// Web 上 `compute` 会退化为同步执行，所以这里不依赖任何 isolate 特性。
 Uint8List runPetFilter(PetFilterRequest req) {
-  // 注意：`img.decodeImage` 遇到畸形数据会**抛异常**而不是返回 null
-  // （实测会被 PSD 解码器的头部探测带崩）。必须自己兜住，
-  // 否则一张损坏的照片就能让滤镜整段挂掉。
-  final img.Image? decoded;
-  try {
-    decoded = img.decodeImage(req.bytes);
-  } catch (_) {
-    return req.bytes;
-  }
-  // 解不开就原样返回：滤镜失败不该让用户丢掉这张照片。
-  if (decoded == null) return req.bytes;
+  img.Image? work;
 
-  var work = decoded;
-  final longSide = math.max(decoded.width, decoded.height);
-  if (req.maxSide > 0 && longSide > req.maxSide) {
-    final scale = req.maxSide / longSide;
-    work = img.copyResize(
-      decoded,
-      width: (decoded.width * scale).round(),
-      height: (decoded.height * scale).round(),
-      interpolation: img.Interpolation.average,
-    );
+  final preDecoded = req.rgba;
+  if (preDecoded != null && req.width > 0 && req.height > 0) {
+    // 走「已限尺寸解码」通路：像素是调用方在主 isolate 用原生解码器
+    // 备好的，这里直接接管，不再全尺寸解码。
+    try {
+      // image 包的 fromBytes 只认 ByteBuffer（从 buffer 起点读），
+      // 所以这里必须保证像素是从 buffer 起点开始的连续区间；
+      // 万一不是（极少见），复制一份对齐（宁可多 27MB 也不能错位取像素）。
+      final pixels = preDecoded.offsetInBytes == 0
+          ? preDecoded
+          : Uint8List.fromList(preDecoded);
+      work = img.Image.fromBytes(
+        width: req.width,
+        height: req.height,
+        bytes: pixels.buffer,
+        numChannels: 4,
+        order: img.ChannelOrder.rgba,
+      );
+    } catch (_) {
+      return req.bytes;
+    }
+  } else {
+    // 注意：`img.decodeImage` 遇到畸形数据会**抛异常**而不是返回 null
+    // （实测会被 PSD 解码器的头部探测带崩）。必须自己兜住，
+    // 否则一张损坏的照片就能让滤镜整段挂掉。
+    final img.Image? decoded;
+    try {
+      decoded = img.decodeImage(req.bytes);
+    } catch (_) {
+      return req.bytes;
+    }
+    // 解不开就原样返回：滤镜失败不该让用户丢掉这张照片。
+    if (decoded == null) return req.bytes;
+
+    work = decoded;
+    final longSide = math.max(decoded.width, decoded.height);
+    if (req.maxSide > 0 && longSide > req.maxSide) {
+      final scale = req.maxSide / longSide;
+      work = img.copyResize(
+        decoded,
+        width: (decoded.width * scale).round(),
+        height: (decoded.height * scale).round(),
+        interpolation: img.Interpolation.average,
+      );
+    }
   }
 
   final rgba = work.getBytes(order: img.ChannelOrder.rgba);
@@ -910,6 +952,9 @@ class PetFilter {
     ({double left, double top, double right, double bottom})? subjectRect,
   }) => (
     bytes: encoded,
+    rgba: null,
+    width: 0,
+    height: 0,
     exposure: exposureAlreadyApplied ? 0 : profile.exposureCompensation,
     tempShift: profile.tempShift,
     shadowLift: profile.shadowLift,
@@ -954,5 +999,42 @@ class PetFilter {
       jpegQuality: jpegQuality,
       subjectRect: subjectRect,
     ),
+  );
+
+  /// 给任务挂上「已限尺寸解码」的像素。
+  ///
+  /// 调用方在**主 isolate** 用原生解码器（`decodeRgbaLimited`）把图缩到
+  /// [maxSide] 解成像素后调它，滤镜就再也不会去解全尺寸大图。
+  ///
+  /// 为什么要专门走这一条：iOS 上相机输出可能是 48MP，全尺寸解码成 RGBA
+  /// 就是 192MB —— 一张就足以让 iOS 杀掉进程（jetsam），纯 Dart 解码还要
+  /// 好几秒（用户说的「拍照模式很卡」）。
+  static PetFilterRequest withRgba(
+    PetFilterRequest req,
+    Uint8List rgba,
+    int width,
+    int height,
+  ) => (
+    bytes: req.bytes,
+    rgba: rgba,
+    width: width,
+    height: height,
+    exposure: req.exposure,
+    tempShift: req.tempShift,
+    shadowLift: req.shadowLift,
+    highlightRolloff: req.highlightRolloff,
+    clarity: req.clarity,
+    noiseReduction: req.noiseReduction,
+    chromaDenoise: req.chromaDenoise,
+    vignette: req.vignette,
+    saturation: req.saturation,
+    vibrance: req.vibrance,
+    grain: req.grain,
+    texture: req.texture,
+    eyeEnhance: req.eyeEnhance,
+    tearStain: req.tearStain,
+    maxSide: req.maxSide,
+    jpegQuality: req.jpegQuality,
+    subjectRect: req.subjectRect,
   );
 }

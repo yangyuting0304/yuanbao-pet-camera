@@ -227,8 +227,6 @@ iOS 上宠物模式**没有自动追焦与主体分区**，只能点按对焦。
 
 ---
 
-## 六、待你决策的事项（iOS 相关见上一节）
-
 ## 六之二、画质事故复盘：锐化过度（2026-10-20 已修）
 
 **用户反馈**：App 拍出来的效果很差，锐化过度了，还不如原相机。
@@ -272,6 +270,79 @@ dart run tools/filter_lab/preview.dart <实拍图.jpg> <输出目录> current su
 
 输出对照图 + 锐度比/过冲指标。输入图是用户素材，放在 `.filter_lab/`
 （已 gitignore，不入库）。
+
+## 六之三、iOS 闪退与卡顿（2026-10-20 已修，待真机验证）
+
+**症状（iPhone 14 Pro Max）**：第一天还能拍，第二天直接闪退，拍照模式很卡。
+
+### 根因 1：iOS 的输出尺寸完全失控（48MP）—— 上一轮的「封顶」其实没生效
+
+上一轮我以为把 iOS 的「超清」封顶到 `veryHigh` 就能限制输出尺寸，**这是错的**。
+读 camera_avfoundation 0.10.3+1 的 Swift 源码后确认：
+
+- `setCaptureSessionPreset` 对 `.veryHigh` 只设 `sessionPreset = .hd1920x1080`，
+  **不动 activeFormat**（只有 `.max` 才切 activeFormat）；
+- `start()` 里无条件调用 `configureMaxPhotoDimensions()`，把
+  `capturePhotoOutput.maxPhotoDimensions` 设成**当前 activeFormat 支持的最大值**；
+- 而 `capturePhoto` 只在 `resolutionPreset == .max` 时才显式设
+  `settings.maxPhotoDimensions`，其余情况用 AVCapturePhotoSettings 的默认值
+  ——也就是 output 的上限。
+
+**结果：无论选哪档，iPhone 14 Pro Max 拍出来都是 48MP。**
+
+### 根因 2：链路里有 5 处全尺寸解码
+
+`img.decodeImage`（纯 Dart）把 48MP 铺成 **192MB RGBA**，还要 3~8 秒：
+
+| 消费点 | 用途 | 状态 |
+|--------|------|------|
+| 毛色分析 | 只需 160px 采样 | 已限尺寸（缩到 320 再解） |
+| 滤镜 | 逐像素处理 | 已限尺寸（缩到 3000 再解） |
+| 连拍选帧 | 判断清晰度 | 仍是全尺寸（下一批） |
+| 多帧融合 | 对齐 + 合成 | 仍是全尺寸（下一批） |
+| 成片比例合成 | 裁切 | 仍是全尺寸（下一批） |
+
+后三处在 iOS 上因为输出已被压到 12MP（48MB/张）而可以接受；
+**Android 上的 48MP/108MP 机型仍有风险**，是下一批要做的。
+
+### 根因 3：历史照片 200 张全量常驻
+
+`loadAll()` 把最多 200 张成片的字节**全部读进内存**（1~3MB/张 → 200~600MB 常驻）。
+第一天内存是空的所以能拍；第二天启动回填把基线抬起来，叠加拍摄时的内存
+峰值 → iOS jetsam 直接杀进程。**这正是「第一天能拍、第二天闪退」的形状**：
+不是某个瞬间爆掉，而是长期占用。
+
+### 本轮修复
+
+1. **`ios/Podfile` 补丁**：在 `post_install` 里改写 camera_avfoundation 的
+   `configureMaxPhotoDimensions()`，把输出上限压到 **12MP**。
+   做法是「从该机型**确实支持**的尺寸集合里挑 ≤12MP 的最大者」——
+   直接赋一个可能不被支持的尺寸会抛 Objective-C 异常（Swift 侧不可捕获），
+   等于把闪退换个地方发生。补丁找不到目标代码时只打印警告，不阻断构建。
+2. **新增 `lib/data/image_decode.dart`**：用引擎原生解码器
+   （`dart:ui` 的 `instantiateImageCodec` + targetWidth，iOS 走 ImageIO
+   缩略解码路径）先缩再解，内存与耗时只跟目标尺寸相关。毛色分析与滤镜
+   已接入；Web 端与异常路径自动退回纯 Dart 解码。
+3. **历史回填 200 → 24 张**（`photo_storage_io._maxRestore`）：更早的照片
+   仍在磁盘上，云端 works.json 照常展示。
+
+### 新增防线
+
+`test/image_decode_test.dart`：限尺寸解码的尺寸正确性、坏数据不崩、
+滤镜的「已解码像素」通路输出尺寸与给定像素一致（证明它没有偷偷去解
+全尺寸 JPEG）。
+
+### 仍需你验证
+
+云构建一个 iOS 包（`codemagic.yaml` 走 `flutter build ipa`，Podfile 补丁
+在 `pod install` 时自动生效），装机后确认：
+
+1. 拍一张，看**成片分辨率**（应约 4032×3024，而不是 8064×6048）；
+2. 连拍 3~5 张，看是否还闪退；
+3. 进宠物模式，看是否还卡。
+
+若 Podfile 补丁没生效（构建日志里应有「已把 iOS 照片输出上限压到 12MP」
+或对应的警告），把日志给我。
 
 ## 六、待你决策的事项（iOS 相关见上一节）
 

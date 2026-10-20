@@ -43,6 +43,7 @@ import 'package:pet_camera/app/media_platform.dart';
 import 'package:pet_camera/app/mingcute_icons.dart';
 import 'package:pet_camera/app/tokens.dart';
 import 'package:pet_camera/data/ai_portrait_service.dart';
+import 'package:pet_camera/data/image_decode.dart';
 import 'package:pet_camera/data/burst_selector.dart';
 import 'package:pet_camera/data/camera_capability.dart';
 import 'package:pet_camera/data/camera_frame.dart';

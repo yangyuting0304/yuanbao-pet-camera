@@ -18,24 +18,30 @@ import 'pet_coat_analyzer.dart';
 import 'pet_species_detector.dart';
 
 /// 跨 isolate 传递的毛色分析任务。
-typedef PetCoatRequest = ({Uint8List bytes, int sampleTarget});
+///
+/// 携带的是**已限尺寸解码**的像素，不是 JPEG 字节。
+///
+/// 为什么不再直接传 JPEG：毛色分析只需要 160px 的采样，却曾让 isolate
+/// 去解整张图 —— iOS 上那张图可能是 48MP，纯 Dart 解码成 RGBA 就是
+/// 192MB，还要好几秒。这正是「一进拍照模式就卡住」的元凶（自动抓帧
+/// 就在切到宠物模式时触发）。现在由调用方在主 isolate 用原生解码器
+/// 缩到 [PetCoatRequest.sampleTarget] 的两倍再传进来。
+typedef PetCoatRequest = ({
+  Uint8List rgba,
+  int width,
+  int height,
+  int sampleTarget,
+});
 
-/// isolate 入口：解码 + 毛色分析。
+/// isolate 入口：毛色分析（像素已解码好）。
 ///
 /// **物种识别不放在这里**——它依赖平台能力（ML Kit / 网络请求），
 /// 没法在 isolate 里跑，由调用方在主 isolate 上补上后合并。
 ///
-/// 解码失败时返回一个低置信度的回退结果，绝不抛异常：
-/// 自动识别失败只能"降级为用户手选"，不能中断拍照主流程。
+/// 像素不可用时返回一个低置信度的回退结果，绝不抛异常：
+/// 自动识别失败只能「降级为用户手选」，不能中断拍照主流程。
 PetCoatAnalysis runPetCoatAnalysis(PetCoatRequest request) {
-  img.Image? decoded;
-  try {
-    decoded = img.decodeImage(request.bytes);
-  } catch (_) {
-    // img.decodeImage 遇畸形数据会抛异常而不是返回 null，必须自己兜住。
-    decoded = null;
-  }
-  if (decoded == null) {
+  if (request.rgba.isEmpty || request.width <= 0 || request.height <= 0) {
     return (
       coat: PetCoat.tabby,
       confidence: 0.0,
@@ -46,11 +52,10 @@ PetCoatAnalysis runPetCoatAnalysis(PetCoatRequest request) {
       reason: '图像解码失败，已回退到通用参数',
     );
   }
-  final rgba = decoded.getBytes(order: img.ChannelOrder.rgba);
   return PetCoatAnalyzer.analyze(
-    rgba,
-    width: decoded.width,
-    height: decoded.height,
+    request.rgba,
+    width: request.width,
+    height: request.height,
     sampleTarget: request.sampleTarget,
   );
 }
