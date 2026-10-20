@@ -63,3 +63,8 @@ cloud_functions/node_modules/
 
 # dist/ 只保留说明文档；APK 体积大且每次构建都变，改走 GitHub Release 或网盘分发（见 dist/README.md）
 dist/*.apk
+
+# 滤镜实验台的输入/输出：里面是用户真机实拍照片与对照图，属于个人素材，不入库
+# （实验台脚本本身在 tools/filter_lab/，是要入库的）
+.filter_lab/
+

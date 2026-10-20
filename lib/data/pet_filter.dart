@@ -93,9 +93,51 @@ class PetFilterKernel {
   static const double _chromaMid = 128.0;
 
   /// 主体分区：检测框外区域保留的清晰度/毛发质感增强比例。
-  /// 0.30 = 背景只做约三成增强（留一点通透，不至于是"死背景"），主体全额，
-  /// 视线自然被拉到猫身上——这是宠物版"人像模式"的核心。
-  static const double _subjectBgFloor = 0.30;
+  ///
+  /// 早先取 0.30，理由是"背景留一点通透"。但真机实拍证明这是错的：
+  /// 宠物照片的背景常常是**高频纹理**（瓷砖、地板、树叶、织物），
+  /// 30% 的毛发质感增强照样能把背景磨成砂纸，主体反而被淹没。
+  ///
+  /// 量化证据（1080×1920 实拍图，锐度比 = 滤镜后拉普拉斯方差 / 原图）：
+  /// 背景底值 0.30 时锐度比 **1.99**（锐度翻倍），改成 0.08 后降到 1.2 上下。
+  /// 0.08 保留一点点通透，但不足以让背景的纹理冒头。
+  static const double _subjectBgFloor = 0.08;
+
+  /// 锐化增量的**软限幅**上限（/255）。
+  ///
+  /// 这是白边光晕（halo）的直接克星。unsharp 类增强在边缘两侧会产生
+  /// 正负成对的过冲：暗侧压出黑边、亮侧拉出白边。毛茸茸的猫 + 高频瓷砖
+  /// 背景正是最容易被拉出"白色描边"的组合。
+  ///
+  /// 软限幅用 tanh 而不是硬钳制：|delta| 小的时候**完全不动**（正常的
+  /// 立体感保留），只有超过 [_deltaSoftLimit] 才开始压缩，所以观感是
+  /// "把最扎眼的尖峰削平"，而不是"整体变平"。
+  ///
+  /// 8/255 ≈ 3% 亮度：这是人眼能察觉但不刺眼的上限，实拍下来白边消失，
+  /// 而毛发纹理的层次仍在。
+  static const double _deltaSoftLimit = 6.0;
+
+  /// 锐化增量的软限幅。
+  ///
+  /// 分三段，全程只有乘除、没有 `exp`——这是逐像素热路径（3000px 成片
+  /// 就是 675 万次），调用 transcendentals 会明显拖慢滤镜，Web 端更甚
+  /// （那里 compute 退化为同步执行，会冻住界面）。
+  ///
+  /// ① |x| ≤ 0.5T：**原样返回**，正常强度的增强一点不受影响；
+  /// ② 0.5T < |x| < 2.5T：凹函数过渡，斜率从 1 平滑降到 0；
+  /// ③ |x| ≥ 2.5T：钳到 ±T。
+  ///
+  /// 段与段的**斜率连续**（①→② 在 0.5T 处斜率都是 1，②→③ 在 2.5T 处
+  /// 都降到 0），所以不会出现"平坦带"或折角伪影。
+  static double _softLimit(double x) {
+    const t = _deltaSoftLimit;
+    final a = x.abs();
+    if (a <= t * 0.5) return x;
+    if (a >= t * 2.5) return x.sign * t;
+    final u = (a - t * 0.5) / (t * 2.0); // 0..1
+    final y = t * 0.5 + (t * 0.5) * (u * (2 - u));
+    return x.sign * y;
+  }
 
   /// 泪痕检测门控：偏红程度（r−b）在 12→36 之间平滑启动；
   /// 暗度门控（l<140 起步）把亮橙/棕毛发挡在外面，防止橘猫棕犬被误"去红"。
@@ -300,8 +342,15 @@ class PetFilterKernel {
     if (useTexture) {
       blurMid = _boxBlur(luma!, width, height, _textureMidRadius);
     }
-    final textureMid = texture;
-    final textureSharp = texture * _sharpRatio;
+    // 毛发质感（texture）的两个频带强度。
+    //
+    // **没有检测框时打对折**：没有主体信息，"毛发质感"就分不清是猫毛还是
+    // 背景纹理，一刀切下去只会把满屏高频纹理（瓷砖、布料）一起放大。
+    // iOS 上端侧检测当前是关的（见 pet_detector_io），拿不到框，
+    // 所以 iPhone 上尤其需要这个保守系数。
+    final hasSubject = subjectRect != null;
+    final textureMid = texture * (hasSubject ? 1.0 : 0.5);
+    final textureSharp = texture * _sharpRatio * (hasSubject ? 1.0 : 0.5);
 
     // ───────────── 色度降噪（手机上最刺眼的那种噪点） ─────────────
     //
@@ -467,7 +516,14 @@ class PetFilterKernel {
         // 微对比（+）与降噪（−）都作用在亮度高频分量上，方向相反。
         if (needLuma) {
           final l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-          var delta = 0.0;
+          // 锐化与降噪**分开记账**，原因有二：
+          // ① 软限幅只能作用于锐化项——限幅是为了压住过冲尖峰（白边），
+          //    而降噪项是"要往回减的量"，被限幅削掉一半就等于降噪失效
+          //    （实测：噪点压不下去，测试抓到的）；
+          // ② 主体分区只该管锐化——背景同样需要降噪，噪点不会因为是背景
+          //    就变得不需要压。
+          var sharpen = 0.0;
+          var denoise = 0.0;
           if (needBlur) {
             final hf = l - blurred![i];
             // 降噪用「软阈值削波（coring）」而**不是**整体模糊：
@@ -478,7 +534,8 @@ class PetFilterKernel {
             // 传感器的噪点幅度小，绒毛边缘的落差大。
             final cut = 6.0 + noiseReduction * 12.0;
             final coring = hf.abs() <= cut ? hf : cut * hf.sign;
-            delta += clarityWeight * hf - noiseReduction * coring;
+            sharpen += clarityWeight * hf;
+            denoise -= noiseReduction * coring;
           }
           // 毛发质感：中频带通增强 + 边缘遮罩锐化。
           // 与降噪的门控同一维度（振幅绝对值）但方向相反：
@@ -487,21 +544,26 @@ class PetFilterKernel {
           if (useTexture) {
             final hfS = l - blurSharp![i];
             final hfM = l - blurMid![i];
-            delta += textureMid * hfM * _gate(hfM.abs(), _midGateLo, _midGateHi);
-            delta +=
+            sharpen += textureMid * hfM * _gate(hfM.abs(), _midGateLo, _midGateHi);
+            sharpen +=
                 textureSharp *
                 hfS *
                 _gate(hfS.abs(), _sharpGateLo, _sharpGateHi);
           }
-          // ② 主体-背景分区：清晰度/毛发质感按"是否主体"加权——猫身要
-          // "根根分明"，背景（家具/地板）增强只会放大噪点与杂乱。
+          // ② 主体-背景分区：只对**锐化项**加权——猫身要"根根分明"，
+          // 背景（家具/地板）增强只会放大噪点与杂乱。
           if (subjCx != null) {
             // 一次性取出非空值：可空变量在像素循环内不会被 Dart 提升，
             // 逐个断言太啰嗦，提取为局部非空变量最干净。
             final cx = subjCx, cy = subjCy!, rx = subjRx!, ry = subjRy!;
             final sw = _zoneWeight(x - cx, y - cy, rx, ry);
-            delta *= _subjectBgFloor + (1.0 - _subjectBgFloor) * sw;
+            sharpen *= _subjectBgFloor + (1.0 - _subjectBgFloor) * sw;
           }
+          // ③ 软限幅：削掉过冲尖峰（白边光晕的来源），小增量完全不受影响。
+          //
+          // 放在分区加权**之后**：限幅要作用在"最终要加到像素上的量"上，
+          // 否则背景的残量（0.08 份）绕过了限幅，边缘照样冒白边。
+          final delta = _softLimit(sharpen) + denoise;
           r += delta;
           g += delta;
           b += delta;
