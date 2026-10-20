@@ -60,6 +60,13 @@ class SettingsPage extends ConsumerWidget {
               () => ref.read(shortVideosProvider.notifier).clear(),
             ),
           ),
+          const SizedBox(height: 12),
+          _ActionRow(
+            icon: MingCuteIcons.clipboard,
+            title: '拍照诊断日志',
+            subtitle: '查看上一次拍照走过的步骤（排查闪退用）',
+            onTap: () => _showShotDiagnostics(context),
+          ),
           const SizedBox(height: 24),
           const _SettingsSectionTitle(title: '关于'),
           const SizedBox(height: 12),
@@ -211,6 +218,74 @@ class _AboutBeianLink extends StatelessWidget {
     );
   }
 }
+
+/// 展示拍照诊断日志。
+///
+/// 为什么需要这个入口：iOS 上的 native 崩溃（AVFoundation 崩在拍照里）
+/// **拿不到控制台日志** —— 进程被系统杀掉时 print 全部随进程消失，
+/// 用户只看到「按快门就退回桌面」。这里把拍照流程的步骤落盘，
+/// 闪退后重新打开 App 就能看到「崩在第几步」。
+Future<void> _showShotDiagnostics(BuildContext context) async {
+    final lines = await readShotDiagnostics();
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Container(
+            constraints: const BoxConstraints(maxHeight: 420),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '拍照诊断日志',
+                  style: TextStyle(
+                    fontSize: AppUi.fontHeadline,
+                    height: 28 / AppUi.fontHeadline,
+                    fontWeight: FontWeight.w400,
+                    color: Color(0xFF000000),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Text(
+                      lines.isEmpty ? '（还没有记录）' : lines.join('\n'),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        height: 1.5,
+                        fontFamily: 'monospace',
+                        color: Color(0xFF333333),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () {
+                      clearShotDiagnostics();
+                      Navigator.of(dialogContext).pop();
+                    },
+                    child: const Text('清空'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
 /// 清除缓存二次确认。
 Future<void> _confirmClear(

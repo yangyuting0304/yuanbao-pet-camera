@@ -78,6 +78,16 @@ end
 # 插件升级后这段 Swift 可能变样，补丁就会打不上（会打印警告）。Dart 侧另有
 # 「限尺寸解码」作为纵深防御（lib/data/image_decode.dart），双保险。
 def patch_ios_photo_size_cap(sandbox_root)
+  # 逃生开关：云构建时传 YUANBAO_IOS_PHOTO_CAP=0 就能不打这个补丁。
+  #
+  # 为什么要留这个开关：补丁改的是第三方插件的源码，一旦它本身成为
+  # 崩溃源（而不是解药），我们必须能**立刻**对比验证，而不必改代码、
+  # 等一轮云构建。排查 iOS 拍照闪退时它是最快的 A/B 手段。
+  if ENV['YUANBAO_IOS_PHOTO_CAP'] == '0'
+    puts '[元宝拍拍] 按 YUANBAO_IOS_PHOTO_CAP=0 跳过 iOS 照片输出上限补丁。'
+    return
+  end
+
   plugin_dir = File.join(sandbox_root, 'camera_avfoundation')
   patched = false
 

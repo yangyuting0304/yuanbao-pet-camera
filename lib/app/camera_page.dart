@@ -315,6 +315,13 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         _activePreset = preset;
         if (enableAudio && !audio) _audioUnsupported = true;
         if (mounted) setState(() => _isInitialized = true);
+        // 新会话刚起来的一小会儿里不能拍照（见 [_cameraSettleUntil]）。
+        // iOS 要得久一些：AVFoundation 从 startRunning 到能稳定出图更慢，
+        // 这期间 takePicture 有崩进程的风险。
+        final settle = (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS)
+            ? const Duration(milliseconds: 1200)
+            : const Duration(milliseconds: 300);
+        _cameraSettleUntil = DateTime.now().add(settle);
         // 切片B：控制器就绪后立即套用当前宠物参数。
         await _applyPetProfile();
         return;
@@ -458,7 +465,18 @@ class _CameraPageState extends ConsumerState<CameraPage> {
   Future<void> _autoDetectPet() async {
     final c = _controller;
     if (c == null || !_isInitialized || _autoDetecting || _recording) return;
+    // 拍照互斥：快门正在用相机时，自动抓帧直接跳过。
+    //
+    // iOS 上这不是"优化"而是**必须**：AVCapturePhotoOutput 不支持并发
+    // 拍照，两个 takePicture 同时在飞就是 native 崩溃（实测：点宠物模式后
+    // 一按快门就闪退）。Android 上则是"拍照失败"的异常。
+    if (_photoInFlight) {
+      debugPrint('[毛色分析] 快门正在使用相机，本次自动抓帧跳过');
+      return;
+    }
+    _photoInFlight = true;
     if (mounted) setState(() => _autoDetecting = true);
+    unawaited(logShotStep('autoDetect.start'));
     // 抓帧要独占相机会话：图像流与拍照在 Android 上会互相抢占。
     final paused = await _pauseTracking();
     try {
@@ -529,6 +547,7 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         );
       }
     } finally {
+      _photoInFlight = false;
       if (mounted) setState(() => _autoDetecting = false);
       await _resumeTracking(paused);
     }
@@ -869,7 +888,17 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       debugPrint('[连拍] iOS 上按${_burstShots.count} 连拍封顶到 $count 张（内存上限）');
     }
     final shots = <Uint8List>[];
+    // 快照当前控制器：连拍期间用户可能切模式，而切模式会 dispose 旧控制器
+    // 并重建一个新的。若继续用 `_controller!`，就可能对着**已释放**的
+    // 控制器拍照 —— iOS 上那会直接崩进程。
+    final c = _controller;
+    if (c == null) return const [];
     for (var i = 0; i < count; i++) {
+      // 每张之前重新确认：控制器还是同一个、还在初始化完成状态。
+      if (!identical(c, _controller) || !_isInitialized) {
+        debugPrint('[连拍] 控制器已变更或未就绪，中止第 ${i + 1}/${count} 张');
+        break;
+      }
       // 单张加超时：相机处于异常状态时 takePicture 可能**永久不返回**，
       // 会把整条拍照链路连同快门标志一起挂死（实拍反馈的"点了没反应"）。
       //
@@ -877,10 +906,29 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       // 拍照判死。5 连拍要连开 5 次快门，中途卡一张很常见；为了第 5 张丢掉
       // 前 4 张（用户白按一次快门）比少融合几帧严重得多。
       try {
-        final shot = await _controller!
+        final shot = await c
             .takePicture()
             .timeout(const Duration(seconds: 8));
-        shots.add(await shot.readAsBytes());
+        final bytes = await shot.readAsBytes();
+        shots.add(bytes);
+        unawaited(
+          logShotStep(
+            'burst.shot',
+            detail: 'index=${i + 1}/$count bytes=${bytes.length}',
+          ),
+        );
+        // iOS 上两张之间留一点间隔。
+        //
+        // AVCapturePhotoOutput 在上一张的 delegate 还没收尾时再次拍照，
+        // 是 AVFoundation 的经典竞争点（插件用 inProgressSavePhotoDelegates
+        // 兜住了大部分情况，但背靠背零间隔仍有风险）。
+        // 顺带还有个画质好处：间隔开的时间点不同，噪声样本更独立，
+        // 多帧融合的降噪效果反而略好。
+        if (i + 1 < count &&
+            !kIsWeb &&
+            defaultTargetPlatform == TargetPlatform.iOS) {
+          await Future<void>.delayed(const Duration(milliseconds: 150));
+        }
       } catch (e) {
         // 一张都没拿到 → 这次确实拍不出来，交给 _takePicture 统一报错。
         if (shots.isEmpty) rethrow;
@@ -1200,23 +1248,88 @@ class _CameraPageState extends ConsumerState<CameraPage> {
 
   /// 拍照并在保存前按设置的比例生成最终成片。
   /// 比例外区域补纯黑，避免直接裁掉原图内容。
+  /// 拍照互斥标志：同一时刻只允许一个 takePicture 在飞。
+  ///
+  /// ## 为什么必须有（2026-10-20 实测闪退）
+  ///
+  /// 切到宠物模式会自动抓一帧做毛色分析（[PetAutoProfiler]），如果用户
+  /// 在这期间按了快门，就会有**两个 takePicture 同时在飞**：
+  /// AVCapturePhotoOutput 不支持并发拍照，Android 上表现为「拍照失败」
+  /// （可捕获的异常），**iOS 上是 native 崩溃** —— 现象正是
+  /// 「点击宠物模式，拍照，一按按键就闪退」。
+  ///
+  /// 所以两个入口（快门 / 自动抓帧）必须互斥：撞上了就跳过一个，
+  /// 而不是让它们一起跑。
+  bool _photoInFlight = false;
+
+  /// 相机"刚重建完"的静默期：这段时间里按快门会被拦下并提示。
+  ///
+  /// iOS 上尤其重要：切模式会 dispose 旧会话并重建，而新会话从
+  /// `startRunning` 到真正能稳定拍照还有一小段准备时间。这期间调用
+  /// `takePicture` 正是 AVFoundation 最容易崩的操作 —— 实测反馈
+  /// 「点击宠物模式，拍照，一按按键就闪退」几乎肯定落在这里：
+  /// 用户切完模式顺手按快门，快门落在了还没稳住的会话上。
+  ///
+  /// 与其让它崩，不如告诉用户"相机准备中"，等 1 秒多再按。
+  DateTime? _cameraSettleUntil;
+
+  /// 当前是否处于"相机准备中"（新会话刚起来的那一小会儿）。
+  bool get _cameraSettling =>
+      _cameraSettleUntil != null &&
+      DateTime.now().isBefore(_cameraSettleUntil!);
+
+  /// 相机正被占用时的统一提示。
+  void _showCameraBusyHint([String message = '相机正在处理中，请稍候再按快门']) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  /// 拍照要独占相机会话：宠物模式下图像流正开着，必须先让出来。
   Future<void> _takePicture() async {
     if (_controller == null || !_isInitialized) return;
+    // 拍照互斥：自动抓帧（切宠物模式时）可能正在用相机。
+    if (_photoInFlight) {
+      _showCameraBusyHint();
+      return;
+    }
+    // 相机刚重建完还没稳住：这会儿按快门在 iOS 上会崩进程。
+    if (_cameraSettling) {
+      _showCameraBusyHint('相机准备中，请稍等一下再按快门');
+      return;
+    }
+    _photoInFlight = true;
     // 拍照要独占相机会话：宠物模式下图像流正开着，必须先让出来。
     final paused = await _pauseTracking();
+    // 诊断：iOS 上的 native 崩溃拿不到控制台日志，崩在哪一步只能靠这个文件。
+    unawaited(
+      logShotStep(
+        'takePicture.start',
+        detail:
+            'mode=$_modeIndex preset=${_quality.label} burst=$_effectiveBurstShots',
+      ),
+    );
     try {
       // 切片G：先连拍（单张时就是普通拍照）。
       final frames = await _captureBurst();
       // 切片H：多帧融合 —— 选最清晰的一帧作参考，其余帧对齐后融合降噪。
       // 阶段提示分细：这一步是整条链路的耗时大头，卡住时要能一眼看出。
       if (mounted) setState(() => _shootingHint = '正在合成…');
+      unawaited(logShotStep('fuse.start', detail: 'frames=${frames.length}'));
       final rawBytes = await _fuseFrames(frames);
+      unawaited(logShotStep('fuse.end', detail: 'bytes=${rawBytes.length}'));
       // 切片D：先套宠物滤镜（调色 + 美颜），再按所选比例加框。
       // 顺序很重要——先加框的话，黑边也会被卷进滤镜计算。
       // 交棒给 _filtering：它有自己的文案，这里先把通用提示撤掉。
       if (mounted) setState(() => _shootingHint = null);
       final filtered = await _applyPetFilter(rawBytes);
+      unawaited(logShotStep('filter.end', detail: 'bytes=${filtered.length}'));
       final bytes = await _composePhotoToSelectedRatio(filtered);
+      unawaited(logShotStep('compose.end', detail: 'bytes=${bytes.length}'));
       // 本地即时展示。返回的时间戳用于关联稍后录完的动态短片。
       final photo = ref.read(capturedPhotosProvider.notifier).add(bytes);
       // 动态照片：照片已经进列表了，短片在后台补录、录完再关联回来。
@@ -1290,6 +1403,7 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         ).showSnackBar(SnackBar(content: Text('拍照失败：$e')));
       }
     } finally {
+      _photoInFlight = false;
       await _resumeTracking(paused);
     }
   }
@@ -1500,11 +1614,24 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     // 实时跟踪只在宠物模式开启（其他模式零开销）。
     await _syncTracking();
     if (i == 2 && !_autoDetectedThisSession) {
-      unawaited(
-        Future<void>.delayed(_autoDetectDelay).then((_) {
-          if (mounted) _autoDetectPet();
-        }),
-      );
+      // iOS 上**不做**自动抓帧。
+      //
+      // 自动抓帧本身就是一次 takePicture，而 AVCapturePhotoOutput 不支持
+      // 并发拍照：用户在这个窗口里按快门，两个拍照请求同时在飞 →
+      // iOS 上是 native 崩溃（实测反馈：点宠物模式后一按快门就闪退）。
+      //
+      // 代价只是「毛色要自己点一下『自动判断毛色』」——换来的是
+      // 「按快门一定不会崩」，这笔交易在 iOS 上非常划算
+      // （iOS 上毛色分析本来就要拍一帧，耗时也不短）。
+      final autoGrabAllowed =
+          kIsWeb || defaultTargetPlatform != TargetPlatform.iOS;
+      if (autoGrabAllowed) {
+        unawaited(
+          Future<void>.delayed(_autoDetectDelay).then((_) {
+            if (mounted) _autoDetectPet();
+          }),
+        );
+      }
     }
   }
 
