@@ -2,6 +2,10 @@
 
 宠物影像作品集 Demo：基于 Flutter Web 的跨平台应用，集成云端 AI（通义万相 DashScope）实现**写真 / 相册 / 短片 / P 图**四大能力。
 
+> **要改代码 / 接手开发 → 先看 [HANDOVER.md](HANDOVER.md)**（架构红线、拍照链路、
+> 最近的事故复盘、验证方法）。待办与未解决问题见 [TODO.md](TODO.md)。
+> 环境搭建见 [README_setup.md](README_setup.md)，构建见 [README_build.md](README_build.md)。
+
 ## 技术栈
 - Flutter 3.x（Web 渲染器，纯 Dart 无 wasm 依赖）
 - 图标库：lucide_flutter
