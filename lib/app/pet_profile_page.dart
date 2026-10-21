@@ -38,7 +38,12 @@ class _PetProfilePageState extends ConsumerState<PetProfilePage> {
           final recordsAsync = ref.watch(growthRecordsProvider(pet.id));
           return recordsAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (_, __) => const Center(child: Text('记录加载失败')),
+            error: (_, __) => Center(
+              child: TextButton(
+                onPressed: () => ref.invalidate(growthRecordsProvider(pet.id)),
+                child: const Text('记录加载失败，点击重试'),
+              ),
+            ),
             data: (records) => ListView(
               padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
               children: [
@@ -58,6 +63,62 @@ class _PetProfilePageState extends ConsumerState<PetProfilePage> {
                     data: (p) => p.where((x) => x.petId == pet.id).length,
                     orElse: () => 0,
                   ),
+                ),
+                const SizedBox(height: 16),
+                if (!pet.id.startsWith('local_'))
+                  const Text('当前为示例宠物档案，可新建自己的猫咪；成长记录均由你自行填写。'),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => _showPetEditor(),
+                      icon: const Icon(Icons.add),
+                      label: const Text('新建猫咪档案'),
+                    ),
+                    if (pet.id.startsWith('local_'))
+                      OutlinedButton(
+                        onPressed: () => _showPetEditor(pet),
+                        child: const Text('编辑档案'),
+                      ),
+                    for (final type in GrowthType.values)
+                      OutlinedButton(
+                        onPressed: () => _showAddSheet(context, pet.id, type),
+                        child: Text(switch (type) {
+                          GrowthType.weight => '记体重',
+                          GrowthType.vaccine => '记疫苗',
+                          GrowthType.note => '记趣事',
+                        }),
+                      ),
+                    OutlinedButton(
+                      onPressed: records.isEmpty
+                          ? null
+                          : () async {
+                              try {
+                                await MediaPlatform.downloadBytes(
+                                  Uint8List.fromList(
+                                    utf8.encode(
+                                      jsonEncode({
+                                        'pet': pet.name,
+                                        'records': records
+                                            .map((r) => r.toJson())
+                                            .toList(),
+                                      }),
+                                    ),
+                                  ),
+                                  'yuanbao_growth_${pet.id}.json',
+                                );
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('导出失败：$e')),
+                                  );
+                                }
+                              }
+                            },
+                      child: const Text('导出记录'),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 24),
                 Padding(
@@ -79,22 +140,11 @@ class _PetProfilePageState extends ConsumerState<PetProfilePage> {
                   LayoutBuilder(
                     builder: (context, constraints) {
                       const cardGap = 12.0;
-                      final cardWidth = (constraints.maxWidth - cardGap) / 2;
+                      final cardWidth = constraints.maxWidth < 340
+                          ? constraints.maxWidth
+                          : (constraints.maxWidth - cardGap) / 2;
                       final orderedRecords = [...records]
-                        ..sort((a, b) {
-                          const order = <GrowthType, int>{
-                            GrowthType.weight: 0,
-                            GrowthType.note: 1,
-                            GrowthType.vaccine: 2,
-                          };
-                          final typeCompare = (order[a.type] ?? 99).compareTo(
-                            order[b.type] ?? 99,
-                          );
-                          if (typeCompare != 0) {
-                            return typeCompare;
-                          }
-                          return b.date.compareTo(a.date);
-                        });
+                        ..sort((a, b) => b.date.compareTo(a.date));
                       return Wrap(
                         spacing: cardGap,
                         runSpacing: cardGap,
@@ -104,11 +154,27 @@ class _PetProfilePageState extends ConsumerState<PetProfilePage> {
                                 width: cardWidth,
                                 child: _TimelineItem(
                                   record: r,
-                                  onAdd: () =>
-                                      _showAddSheet(context, pet.id, r.type),
-                                  onDelete: () => ref
-                                      .read(growthRecordsMutationProvider)
-                                      .remove(pet.id, r.id),
+                                  onAdd: () => _showAddSheet(
+                                    context,
+                                    pet.id,
+                                    r.type,
+                                    existing: r,
+                                  ),
+                                  onDelete: () async {
+                                    try {
+                                      await ref
+                                          .read(growthRecordsMutationProvider)
+                                          .remove(pet.id, r.id);
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(content: Text('删除失败：$e')),
+                                        );
+                                      }
+                                    }
+                                  },
                                 ),
                               ),
                             )
@@ -125,16 +191,125 @@ class _PetProfilePageState extends ConsumerState<PetProfilePage> {
     );
   }
 
-  void _showAddSheet(BuildContext context, String petId, GrowthType type) {
+  Future<void> _showPetEditor([Pet? pet]) async {
+    final name = TextEditingController(text: pet?.name ?? '');
+    final breed = TextEditingController(text: pet?.breed ?? '');
+    final birth = TextEditingController(text: pet?.birthday ?? '');
+    final key = GlobalKey<FormState>();
+    bool saving = false;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: Text(pet == null ? '新建猫咪档案' : '编辑猫咪档案'),
+          content: SingleChildScrollView(
+            child: Form(
+              key: key,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: name,
+                    maxLength: 20,
+                    decoration: const InputDecoration(labelText: '猫咪名字'),
+                    validator: (v) =>
+                        v == null || v.trim().isEmpty ? '请输入猫咪名字' : null,
+                  ),
+                  TextFormField(
+                    controller: breed,
+                    maxLength: 30,
+                    decoration: const InputDecoration(labelText: '品种（选填）'),
+                  ),
+                  TextFormField(
+                    controller: birth,
+                    decoration: const InputDecoration(
+                      labelText: '生日（选填，2024-06-01）',
+                    ),
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return null;
+                      final parsed = DateTime.tryParse(v.trim());
+                      if (parsed == null ||
+                          parsed.isAfter(DateTime.now()) ||
+                          parsed.year < 1990 ||
+                          parsed.toIso8601String().substring(0, 10) != v.trim()) {
+                        return '请输入有效的过往日期 YYYY-MM-DD';
+                      }
+                      return null;
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(dialogContext),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      if (!key.currentState!.validate()) return;
+                      update(() => saving = true);
+                      try {
+                        final saved = Pet(
+                          id:
+                              pet?.id ??
+                              'local_${DateTime.now().microsecondsSinceEpoch}',
+                          name: name.text.trim(),
+                          species: 'cat',
+                          breed: breed.text.trim().isEmpty
+                              ? '家猫'
+                              : breed.text.trim(),
+                          birthday: birth.text.trim(),
+                          avatarFileName: pet?.avatarFileName ?? '',
+                          bio: pet?.bio ?? '',
+                        );
+                        await Hive.box(
+                          'petProfiles',
+                        ).put(saved.id, saved.toJson());
+                        ref.invalidate(petsProvider);
+                        if (mounted) setState(() => _selectedPetId = saved.id);
+                        if (dialogContext.mounted) Navigator.pop(dialogContext);
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(
+                            context,
+                          ).showSnackBar(SnackBar(content: Text('档案保存失败：$e')));
+                        }
+                        if (context.mounted) update(() => saving = false);
+                      }
+                    },
+              child: Text(saving ? '保存中…' : '保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+    // Dialog route can still animate out after its Future resolves.
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    name.dispose();
+    breed.dispose();
+    birth.dispose();
+  }
+
+  void _showAddSheet(
+    BuildContext context,
+    String petId,
+    GrowthType type, {
+    GrowthRecord? existing,
+  }) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _AddRecordSheet(
         type: type,
-        onSubmit: (record) {
-          ref.read(growthRecordsMutationProvider).add(petId, record);
-          Navigator.pop(context);
+        existing: existing,
+        onSubmit: (record) async {
+          await ref.read(growthRecordsMutationProvider).add(petId, record);
+          if (context.mounted) Navigator.pop(context);
         },
       ),
     );
@@ -382,7 +557,7 @@ class _TimelineItem extends StatelessWidget {
             size: 18,
             color: Colors.white,
           ),
-          '记体重',
+          '编辑体重',
           '体重',
         );
       case GrowthType.vaccine:
@@ -393,7 +568,7 @@ class _TimelineItem extends StatelessWidget {
             size: 18,
             color: Colors.white,
           ),
-          '记疫苗',
+          '编辑疫苗',
           '疫苗',
         );
       case GrowthType.note:
@@ -404,7 +579,7 @@ class _TimelineItem extends StatelessWidget {
             size: 18,
             color: Colors.white,
           ),
-          '记趣事',
+          '编辑趣事',
           '趣事',
         );
     }
@@ -682,9 +857,14 @@ class _EmptyTimeline extends StatelessWidget {
 
 /// 录入底部弹层表单。
 class _AddRecordSheet extends StatefulWidget {
-  const _AddRecordSheet({required this.type, required this.onSubmit});
+  const _AddRecordSheet({
+    required this.type,
+    required this.onSubmit,
+    this.existing,
+  });
   final GrowthType type;
-  final ValueChanged<GrowthRecord> onSubmit;
+  final Future<void> Function(GrowthRecord) onSubmit;
+  final GrowthRecord? existing;
 
   @override
   State<_AddRecordSheet> createState() => _AddRecordSheetState();
@@ -722,16 +902,40 @@ class _AddRecordSheetState extends State<_AddRecordSheet> {
     super.dispose();
   }
 
-  void _submit() {
+  bool _savingRecord = false;
+  @override
+  void initState() {
+    super.initState();
+    final r = widget.existing;
+    if (r != null) {
+      _date = r.date;
+      _valueCtl.text = r.value;
+      _noteCtl.text = r.note;
+    }
+  }
+
+  Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     final record = GrowthRecord(
-      id: 'rec_${DateTime.now().microsecondsSinceEpoch}',
+      id: widget.existing?.id ?? 'rec_${DateTime.now().microsecondsSinceEpoch}',
       type: widget.type,
       date: _date,
       value: _valueCtl.text.trim(),
       note: _noteCtl.text.trim(),
     );
-    widget.onSubmit(record);
+    if (_savingRecord) return;
+    setState(() => _savingRecord = true);
+    try {
+      await widget.onSubmit(record);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('保存失败，请重试：$e')));
+      }
+    } finally {
+      if (mounted) setState(() => _savingRecord = false);
+    }
   }
 
   String _formatDateLabel(DateTime date) {
@@ -1044,7 +1248,17 @@ class _AddRecordSheetState extends State<_AddRecordSheet> {
                   GrowthType.note => '请输入趣事标题',
                 },
               ),
-              validator: (v) => v == null || v.trim().isEmpty ? '此项必填' : null,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return '此项必填';
+                if (widget.type == GrowthType.weight) {
+                  final kg = double.tryParse(v.trim());
+                  if (kg == null || !kg.isFinite || kg <= 0 || kg > 30) {
+                    return '请输入0～30之间的有效体重(kg)';
+                  }
+                }
+                if (v.trim().length > 80) return '最多80个字';
+                return null;
+              },
             ),
             const SizedBox(height: 12),
             Text(
@@ -1073,7 +1287,10 @@ class _AddRecordSheetState extends State<_AddRecordSheet> {
               ),
             ),
             const SizedBox(height: 20),
-            AppPrimaryActionButton(label: '保存', onPressed: _submit),
+            AppPrimaryActionButton(
+              label: _savingRecord ? '保存中…' : '保存',
+              onPressed: _savingRecord ? null : _submit,
+            ),
           ],
         ),
       ),

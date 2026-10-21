@@ -7,7 +7,9 @@ import 'package:pet_camera/app/app_back_button.dart';
 import 'package:pet_camera/app/app_generated_result_page.dart';
 import 'package:pet_camera/app/app_horizontal_edge_inset.dart';
 import 'package:pet_camera/app/app_image.dart';
-import 'package:pet_camera/app/app_loading_view.dart';
+import 'package:pet_camera/app/creative_photo_save.dart';
+import 'package:pet_camera/app/local_photo_picker.dart';
+import 'package:pet_camera/app/share_media.dart';
 import 'package:pet_camera/app/app_photo_preview_panel.dart';
 import 'package:pet_camera/app/app_primary_action_button.dart';
 import 'package:pet_camera/app/mingcute_icons.dart';
@@ -162,7 +164,7 @@ class _RetouchPageState extends ConsumerState<RetouchPage> {
     }
   }
 
-  Future<void> _save() async {
+  Future<void> _save({bool share = false}) async {
     if (_saving || _selected == null) return;
     setState(() => _saving = true);
     try {
@@ -171,26 +173,29 @@ class _RetouchPageState extends ConsumerState<RetouchPage> {
               as RenderRepaintBoundary;
       final img = await boundary.toImage(pixelRatio: 2);
       final bd = await img.toByteData(format: ImageByteFormat.png);
-      if (bd != null) {
-        final bytes = bd.buffer.asUint8List();
-        // 上传 COS + 登记 works.json（「我的创作」）；失败时本地暂存该图到相册照片分组。
-        try {
-          await ref
-              .read(worksProvider.notifier)
-              .add(
-                bytes: bytes,
-                type: LibraryType.editedPhoto,
-                ext: 'png',
-                contentType: 'image/png',
-                label: '毛孩美颜',
-              );
-        } catch (_) {
-          ref.read(capturedPhotosProvider.notifier).add(bytes);
-        }
+      img.dispose();
+      if (bd == null) throw StateError('图片编码失败，请重试');
+      final bytes = bd.buffer.asUint8List();
+      if (share) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('已上传云端并存入相册·我的创作')),
+          await shareMedia(
+            context,
+            bytes,
+            filename: 'yuanbao_beauty.png',
+            mime: 'image/png',
           );
+        }
+      } else {
+        final message = await saveCreativePhoto(
+          ref,
+          bytes,
+          type: LibraryType.editedPhoto,
+          label: '毛孩美颜',
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(message)));
         }
       }
     } catch (e) {
@@ -218,6 +223,15 @@ class _RetouchPageState extends ConsumerState<RetouchPage> {
       appBar: AppBar(
         toolbarHeight: 44,
         leading: AppBackButton(onTap: _handleBack),
+        actions: [
+          IconButton(
+            tooltip: '分享照片',
+            icon: const Icon(Icons.share_outlined),
+            onPressed: _selected == null || _saving || _activeTab == 4
+                ? null
+                : () => _save(share: true),
+          ),
+        ],
         centerTitle: true,
         title: Text(
           '毛孩美颜',
@@ -257,154 +271,173 @@ class _RetouchPageState extends ConsumerState<RetouchPage> {
               onPressed: _selected == null ? null : _save,
               isLoading: _saving,
             ),
-      body: photosAsync.when(
-        loading: () => const AppLoadingView(),
-        error: (_, __) => const Center(child: Text('照片加载失败')),
-        data: (photos) => petsAsync.when(
-          loading: () => const AppLoadingView(),
-          error: (_, __) => const Center(child: Text('宠物加载失败')),
-          data: (pets) {
-            final items = _buildAlbumItems(photos, captured);
-            final selectedImage = _imageProviderFromSource(_selected);
-            final helperText = switch (_activeTab) {
-              1 => '贴纸可拖动，长按删除',
-              4 => '描述想改的效果，AI帮你换装/风格化',
-              _ => null,
-            };
-            return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Text(
-                        '选择照片',
-                        style: TextStyle(
-                          fontSize: AppUi.fontHeadline,
-                          height: 28 / AppUi.fontHeadline,
-                          fontWeight: FontWeight.w400,
-                          color: t.textPrimary,
-                        ),
-                      ),
-                      if (_selected != null)
-                        Row(
-                          children: [
-                            _RetouchActionButton(
-                              label: '清空照片',
-                              onTap: () => setState(() {
-                                _selected = null;
-                                _stickerPresetIndex = null;
+      body: Builder(
+        builder: (context) {
+          final photos = photosAsync.asData?.value ?? const <Photo>[];
+          final pets = petsAsync.asData?.value ?? const <Pet>[];
+          final items = _buildAlbumItems(photos, captured);
+          final selectedImage = _imageProviderFromSource(_selected);
+          final helperText = switch (_activeTab) {
+            1 => '贴纸可拖动，长按删除',
+            4 => '描述想改的效果，AI帮你换装/风格化',
+            _ => null,
+          };
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.add_photo_alternate_outlined),
+                  label: const Text('从手机选照片'),
+                  onPressed: _saving || _aiLoading
+                      ? null
+                      : () async {
+                          try {
+                            final photo = await pickLocalPhoto();
+                            if (photo != null && mounted) {
+                              setState(() {
+                                _selected = photo;
                                 _aiError = null;
-                              }),
-                            ),
-                            const SizedBox(width: AppUi.space8),
-                            _RetouchActionButton(
-                              label: '重新选择',
-                              filled: true,
-                              onTap: () =>
-                                  _openAlbumPhotosPage(context, items, pets),
-                            ),
-                          ],
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Center(
-                    child: RepaintBoundary(
-                      key: _boundaryKey,
-                      child: AppPhotoPreviewPanel(
-                        source: _selected,
-                        onTap: () => _openAlbumPhotosPage(context, items, pets),
-                        width: canvas,
-                        height: canvas,
-                        clickableWhenFilled: false,
-                        emptyIconName: MingCuteIcons.picLine,
-                        emptyText: '请先选择照片',
-                        emptyBackgroundColor: const Color(0xFFF6F8FA),
-                        filledBackgroundColor: _bgIndex == 0
-                            ? const Color(0xFFF6F8FA)
-                            : kBgs[_bgIndex].color ?? const Color(0xFFF6F8FA),
-                        filledChild: selectedImage == null
-                            ? null
-                            : Stack(
-                                children: [
-                                  Center(
-                                    child: _shapeClip(
-                                      child: ColorFiltered(
-                                        colorFilter: ColorFilter.matrix(
-                                          kFilters[_filterIndex].matrix,
-                                        ),
-                                        child: Image(
-                                          image: selectedImage,
-                                          fit: BoxFit.cover,
-                                          width: canvas,
-                                          height: canvas,
-                                        ),
+                              });
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('选照片失败：$e')),
+                              );
+                            }
+                          }
+                        },
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      '选择照片',
+                      style: TextStyle(
+                        fontSize: AppUi.fontHeadline,
+                        height: 28 / AppUi.fontHeadline,
+                        fontWeight: FontWeight.w400,
+                        color: t.textPrimary,
+                      ),
+                    ),
+                    if (_selected != null)
+                      Row(
+                        children: [
+                          _RetouchActionButton(
+                            label: '清空照片',
+                            onTap: () => setState(() {
+                              _selected = null;
+                              _stickerPresetIndex = null;
+                              _aiError = null;
+                            }),
+                          ),
+                          const SizedBox(width: AppUi.space8),
+                          _RetouchActionButton(
+                            label: '重新选择',
+                            filled: true,
+                            onTap: () =>
+                                _openAlbumPhotosPage(context, items, pets),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Center(
+                  child: RepaintBoundary(
+                    key: _boundaryKey,
+                    child: AppPhotoPreviewPanel(
+                      source: _selected,
+                      onTap: () => _openAlbumPhotosPage(context, items, pets),
+                      width: canvas,
+                      height: canvas,
+                      clickableWhenFilled: false,
+                      emptyIconName: MingCuteIcons.picLine,
+                      emptyText: '请先选择照片',
+                      emptyBackgroundColor: const Color(0xFFF6F8FA),
+                      filledBackgroundColor: _bgIndex == 0
+                          ? const Color(0xFFF6F8FA)
+                          : kBgs[_bgIndex].color ?? const Color(0xFFF6F8FA),
+                      filledChild: selectedImage == null
+                          ? null
+                          : Stack(
+                              children: [
+                                Center(
+                                  child: _shapeClip(
+                                    child: ColorFiltered(
+                                      colorFilter: ColorFilter.matrix(
+                                        kFilters[_filterIndex].matrix,
+                                      ),
+                                      child: Image(
+                                        image: selectedImage,
+                                        fit: BoxFit.cover,
+                                        width: canvas,
+                                        height: canvas,
                                       ),
                                     ),
                                   ),
-                                  for (final s in _stickers)
-                                    Positioned(
-                                      left: s.x,
-                                      top: s.y,
-                                      child: GestureDetector(
-                                        onPanUpdate: (d) => setState(() {
-                                          s.x += d.delta.dx;
-                                          s.y += d.delta.dy;
-                                        }),
-                                        onLongPress: () =>
-                                            setState(() => _stickers.remove(s)),
-                                        child: Icon(
-                                          s.icon,
-                                          size: s.size,
-                                          color: s.color,
-                                        ),
+                                ),
+                                for (final s in _stickers)
+                                  Positioned(
+                                    left: s.x,
+                                    top: s.y,
+                                    child: GestureDetector(
+                                      onPanUpdate: (d) => setState(() {
+                                        s.x += d.delta.dx;
+                                        s.y += d.delta.dy;
+                                      }),
+                                      onLongPress: () =>
+                                          setState(() => _stickers.remove(s)),
+                                      child: Icon(
+                                        s.icon,
+                                        size: s.size,
+                                        color: s.color,
                                       ),
                                     ),
-                                ],
-                              ),
-                      ),
+                                  ),
+                              ],
+                            ),
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Text(
-                        '编辑照片',
-                        style: TextStyle(
-                          fontSize: AppUi.fontHeadline,
-                          height: 28 / AppUi.fontHeadline,
-                          fontWeight: FontWeight.w400,
-                          color: t.textPrimary,
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      '编辑照片',
+                      style: TextStyle(
+                        fontSize: AppUi.fontHeadline,
+                        height: 28 / AppUi.fontHeadline,
+                        fontWeight: FontWeight.w400,
+                        color: t.textPrimary,
+                      ),
+                    ),
+                    Opacity(
+                      // 说明文案固定占位，避免切换 tab 时标题行抖动。
+                      opacity: helperText != null ? 1 : 0,
+                      child: Text(
+                        helperText ?? '',
+                        style: const TextStyle(
+                          fontSize: AppUi.fontCaption,
+                          color: Colors.grey,
                         ),
                       ),
-                      Opacity(
-                        // 说明文案固定占位，避免切换 tab 时标题行抖动。
-                        opacity: helperText != null ? 1 : 0,
-                        child: Text(
-                          helperText ?? '',
-                          style: const TextStyle(
-                            fontSize: AppUi.fontCaption,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _ToolTabs(active: _activeTab, onTap: _handleEditorTabTap),
-                  const SizedBox(height: 8),
-                  _panel(t, canvas, _selected, selectedImage),
-                ],
-              ),
-            );
-          },
-        ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _ToolTabs(active: _activeTab, onTap: _handleEditorTabTap),
+                const SizedBox(height: 8),
+                _panel(t, canvas, _selected, selectedImage),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -505,17 +538,12 @@ class _RetouchPageState extends ConsumerState<RetouchPage> {
             resultBytes: res.imageBytes,
             demo: res.demo,
             demoText: '演示模式：未接入 AI 服务，已回显源图。',
-            onSave: () async {
-              // 上传 COS + 登记 works.json（「我的创作」）。
-              await ref
-                  .read(worksProvider.notifier)
-                  .add(
-                    bytes: res.imageBytes,
-                    type: LibraryType.createdImage,
-                    ext: 'jpg',
-                    label: 'AI 编辑',
-                  );
-            },
+            onSave: () => saveCreativePhoto(
+              ref,
+              res.imageBytes,
+              type: LibraryType.createdImage,
+              label: 'AI 编辑',
+            ),
           ),
         ),
       );

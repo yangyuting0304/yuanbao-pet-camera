@@ -11,11 +11,12 @@
 """
 
 from pathlib import Path
+import json
 
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "assets/brand/app_icon_master.png"
+SRC = ROOT / "assets/brand/app_icon_yuanbao_cat.png"
 
 # maskable 图标安全区: 内容占画布比例, 四周用底色填充
 MASKABLE_CONTENT_RATIO = 0.78
@@ -71,6 +72,14 @@ def main() -> None:
         canvas.save(out, "PNG")
         print(f"ok  {rel}  {size}x{size} (maskable)")
 
+    # Xcode specifies every required iPhone/iPad/App Store icon in this manifest.
+    ios_dir = ROOT / "ios/Runner/Assets.xcassets/AppIcon.appiconset"
+    for item in json.loads((ios_dir / "Contents.json").read_text())["images"]:
+        if "filename" not in item:
+            continue
+        size = round(float(item["size"].split("x")[0]) * float(item["scale"].removesuffix("x")))
+        img.resize((size, size), Image.LANCZOS).save(ios_dir / item["filename"], "PNG")
+        print(f"ok  iOS {item['filename']} {size}x{size} RGB opaque")
     print("done.")
 
 

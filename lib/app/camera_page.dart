@@ -1532,13 +1532,13 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       try {
         final x = await _controller!.stopVideoRecording();
         final bytes = await x.readAsBytes();
-        ref
+        await ref
             .read(shortVideosProvider.notifier)
             .add(
               ShortVideoEdit(
                 videoBytes: bytes,
                 // camera_web 录制为 webm（iPhone Safari 同为 Web 端）
-                mimeType: 'video/webm',
+                mimeType: kIsWeb && !x.name.toLowerCase().endsWith('.mp4') ? 'video/webm' : 'video/mp4',
                 trimStartMs: 0,
                 trimEndMs: 0,
                 caption: '',

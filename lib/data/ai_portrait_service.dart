@@ -142,19 +142,15 @@ class AiPortraitService {
       return _generateViaProxy(req);
     }
     if (_apiKey.isEmpty) {
-      // 演示模式：未配置 API Key，模拟耗时后回显源图。
-      await Future<void>.delayed(const Duration(seconds: 2));
-      return PortraitResult(
-        imageBytes: req.sourceBytes,
-        styleId: req.styleId,
-        demo: true,
-      );
+      throw const AiPortraitException('写真服务尚未配置，可先使用毛孩美颜的本地滤镜和贴纸');
     }
     final style = kPortraitStyles.firstWhere(
       (s) => s.id == req.styleId,
       orElse: () => kPortraitStyles.first,
     );
-    final prompt = req.prompt.trim().isNotEmpty ? req.prompt.trim() : style.prompt;
+    final prompt = req.prompt.trim().isNotEmpty
+        ? req.prompt.trim()
+        : style.prompt;
     final taskId = await _submitTask(req, prompt);
     final url = await _pollTask(taskId);
     final resp = await http.get(Uri.parse(url));

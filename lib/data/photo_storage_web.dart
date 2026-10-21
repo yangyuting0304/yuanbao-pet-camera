@@ -1,31 +1,48 @@
-// Web 端实现：无 dart:io，落盘能力不可用，全部 no-op。
-//
-// Web 端照片仍靠云端 works.json 兜底（上传成功后刷新可从服务端拉回）；
-// 上传失败时照片仅在当前会话内存中可见——这是 Web 平台的固有限制。
-// 「已删除的云端照片」用内存集合记录，刷新页面后失效（Web 无本地文件）。
 import 'dart:typed_data';
-
+import 'package:hive_flutter/hive_flutter.dart';
 import 'photo_storage.dart';
 
-final Set<String> _hiddenUrls = <String>{};
+Future<String?> save(Uint8List bytes, {DateTime? takenAt}) async {
+  final key = (takenAt ?? DateTime.now()).millisecondsSinceEpoch.toString();
+  await Hive.box('capturedPhotoBytes').put(key, bytes);
+  return key;
+}
 
-Future<String?> save(Uint8List bytes, {DateTime? takenAt}) async => null;
-
-Future<void> delete(DateTime takenAt) async {}
-
-// 动态照片：camera_web 的视频录制能力受浏览器限制，Web 端不提供
-// （相册里也不会出现 LIVE 角标），空实现让上层代码无需分支。
+Future<void> delete(DateTime takenAt) => Hive.box(
+  'capturedPhotoBytes',
+).delete(takenAt.millisecondsSinceEpoch.toString());
 Future<String?> saveLive(Uint8List bytes, {required DateTime takenAt}) async =>
     null;
-
 Future<void> deleteLive(DateTime takenAt) async {}
+Future<List<SavedPhoto>> loadAll() async {
+  final box = Hive.box('capturedPhotoBytes');
+  final keys =
+      box.keys
+          .where((k) => int.tryParse('$k') != null)
+          .map((e) => '$e')
+          .toList()
+        ..sort((a, b) => int.parse(b).compareTo(int.parse(a)));
+  return keys
+      .take(24)
+      .map(
+        (k) => SavedPhoto(
+          fileName: k,
+          bytes: Uint8List.fromList(List<int>.from(box.get(k) as List)),
+          takenAt: DateTime.fromMillisecondsSinceEpoch(int.parse(k)),
+        ),
+      )
+      .toList();
+}
 
-Future<List<SavedPhoto>> loadAll() async => const [];
+Future<void> clearAll() async {
+  await Hive.box('capturedPhotoBytes').clear();
+}
 
-Future<void> clearAll() async {}
-
-Future<Set<String>> loadHiddenUrls() async => {..._hiddenUrls};
-
+Future<Set<String>> loadHiddenUrls() async => Set<String>.from(
+  Hive.box('capturedPhotoBytes').get('hidden', defaultValue: <String>[]),
+);
 Future<void> hideUrl(String url) async {
-  if (url.isNotEmpty) _hiddenUrls.add(url);
+  final urls = await loadHiddenUrls();
+  urls.add(url);
+  await Hive.box('capturedPhotoBytes').put('hidden', urls.toList());
 }

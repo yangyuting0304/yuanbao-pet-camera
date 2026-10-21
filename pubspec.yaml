@@ -11,7 +11,7 @@ publish_to: 'none'
 # CFBundleVersion 就是它，TestFlight 也不接受重复的构建号）。
 # CI 上可以不改这里，用构建参数自动递增：
 #   flutter build ipa --build-number=$BUILD_NUMBER
-version: 1.1.0+3
+version: 1.1.0+4
 
 environment:
   sdk: ^3.12.0
@@ -26,6 +26,8 @@ dependencies:
   video_player: ^2.8.0
   # 短片剪辑：选取本地视频/音频文件（Web 返回字节流）
   file_picker: ^8.0.0
+  # Native share sheet; browser fallback downloads the real file.
+  share_plus: 12.0.2
   # 短片剪辑：配乐播放（与原声叠加）
   audioplayers: ^5.2.0
   # SVG 图标渲染：用于接入 MingCute 图标资源
@@ -76,7 +78,6 @@ flutter:
   assets:
     # 种子照片已外置到对象存储（按 SeedConfig 拼 URL），不再打包进安装包。
     # 仅保留示例短片（0.82 MB）随包分发，播放更稳。
-    - assets/seed/photos/feat_video_compressed.mp4
     - assets/seed/seed_manifest.json
     # 品牌 Logo 资源。
     - assets/brand/logo.svg

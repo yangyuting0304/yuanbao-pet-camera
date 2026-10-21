@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 import 'models.dart';
 
@@ -43,9 +44,18 @@ final seedRepositoryProvider = Provider<SeedRepository>(
   (ref) => SeedRepository.instance,
 );
 
-final petsProvider = FutureProvider<List<Pet>>(
-  (ref) => ref.watch(seedRepositoryProvider).getPets(),
-);
+final petsProvider = FutureProvider<List<Pet>>((ref) async {
+  final seed = await ref.watch(seedRepositoryProvider).getPets();
+  if (!Hive.isBoxOpen('petProfiles')) return seed;
+  final stored = Hive.box('petProfiles').values;
+  final local = <Pet>[];
+  for (final row in stored) {
+    try {
+      local.add(Pet.fromJson(Map<String, dynamic>.from(row as Map)));
+    } catch (_) {}
+  }
+  return [...local, ...seed];
+});
 
 final photosProvider = FutureProvider<List<Photo>>(
   (ref) => ref.watch(seedRepositoryProvider).getPhotos(),

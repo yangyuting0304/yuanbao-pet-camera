@@ -85,6 +85,16 @@ class CapturedPhotosNotifier extends Notifier<List<CapturedPhoto>> {
   }
 
   /// 给刚拍的照片补上动态短片路径（录制完成后调用）。
+  Future<CapturedPhoto> addDurable(Uint8List bytes) async {
+    final takenAt = DateTime.now();
+    final name = await PhotoStorage.save(bytes, takenAt: takenAt);
+    if (name == null) throw StateError('本地相册写入失败，请检查设备存储空间');
+    final photo = CapturedPhoto(bytes: bytes, takenAt: takenAt);
+    state = [photo, ...state];
+    return photo;
+  }
+
+  /// 给刚拍的照片补上动态短片路径（录制完成后调用）。
   ///
   /// 按**实例身份**定位并替换：录制耗时 2 秒，期间用户可能又拍了新照片，
   /// 列表下标已经变了，不能用下标定位（同毫秒撞车的问题见 [add]）。

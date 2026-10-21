@@ -35,7 +35,18 @@ class Pet {
   );
 
   /// 远程头像地址（种子图已外置到对象存储，按「前缀 + 文件名」拼接）。
-  String get avatarUrl => SeedConfig.photoUrl(avatarFileName);
+  String get avatarUrl =>
+      avatarFileName.isEmpty ? '' : SeedConfig.photoUrl(avatarFileName);
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'species': species,
+    'breed': breed,
+    'birthday': birthday,
+    'avatarFileName': avatarFileName,
+    'bio': bio,
+  };
 
   /// 本地资源路径，仅作数据记录 —— 图片已不随安装包分发。
   String get avatarPath => 'assets/seed/photos/$avatarFileName';
@@ -44,7 +55,7 @@ class Pet {
   int get ageYears {
     final b = DateTime.tryParse(birthday);
     if (b == null) return 0;
-    final now = DateTime(2026, 7, 24);
+    final now = DateTime.now();
     var age = now.year - b.year;
     if (now.month < b.month || (now.month == b.month && now.day < b.day)) {
       age -= 1;
@@ -56,7 +67,7 @@ class Pet {
   String get ageLabel {
     final b = DateTime.tryParse(birthday);
     if (b == null) return '未知';
-    final now = DateTime(2026, 7, 24);
+    final now = DateTime.now();
     var years = now.year - b.year;
     var months = now.month - b.month;
     if (now.day < b.day) months--;

@@ -4,9 +4,9 @@
 
 part of 'pages.dart';
 
-/// AI 写真页（占位）。
+/// AI 写真页：使用已配置的云端图像服务。
 /// AI 写真页（切片3）：源照片选择 + 风格选择 + 云端生成 + 结果预览 + 存相册。
-/// 接 AiPortraitService（通义万相 DashScope 骨架）；未配 Key 时演示模式回显源图。
+/// 接 AiPortraitService；未配置或失败时明确提示，不回显原图冒充生成。
 class PortraitPage extends ConsumerStatefulWidget {
   const PortraitPage({super.key});
   @override
@@ -100,7 +100,11 @@ class _PortraitPageState extends ConsumerState<PortraitPage> {
       final result = await ref
           .read(aiPortraitServiceProvider)
           .generatePortrait(
-            PortraitRequest(sourceBytes: bytes, styleId: _styleId, prompt: prompt),
+            PortraitRequest(
+              sourceBytes: bytes,
+              styleId: _styleId,
+              prompt: prompt,
+            ),
           );
       if (!mounted) return;
       setState(() => _generating = false);
@@ -109,17 +113,12 @@ class _PortraitPageState extends ConsumerState<PortraitPage> {
           builder: (_) => AppGeneratedResultPage(
             resultBytes: result.imageBytes,
             demo: result.demo,
-            onSave: () async {
-              // 上传 COS + 登记 works.json（「我的创作」）。
-              await ref
-                  .read(worksProvider.notifier)
-                  .add(
-                    bytes: result.imageBytes,
-                    type: LibraryType.createdImage,
-                    ext: 'jpg',
-                    label: 'AI 写真',
-                  );
-            },
+            onSave: () => saveCreativePhoto(
+              ref,
+              result.imageBytes,
+              type: LibraryType.createdImage,
+              label: 'AI 写真',
+            ),
           ),
         ),
       );
@@ -277,15 +276,10 @@ class _PortraitPageState extends ConsumerState<PortraitPage> {
         onPressed: _selected == null ? null : _generate,
         isLoading: _generating,
       ),
-      body: photosAsync.when(
-        loading: () => const AppLoadingView(),
-        error: (_, __) => const Center(child: Text('照片加载失败')),
-        data: (photos) => petsAsync.when(
-          loading: () => const AppLoadingView(),
-          error: (_, __) => const Center(child: Text('宠物加载失败')),
-          data: (pets) =>
-              _buildContent(context, _mergePhotos(photos, captured), pets),
-        ),
+      body: _buildContent(
+        context,
+        _mergePhotos(photosAsync.asData?.value ?? const <Photo>[], captured),
+        petsAsync.asData?.value ?? const <Pet>[],
       ),
     );
   }
@@ -299,6 +293,34 @@ class _PortraitPageState extends ConsumerState<PortraitPage> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
       children: [
+        OutlinedButton.icon(
+          icon: const Icon(Icons.add_photo_alternate_outlined),
+          label: const Text('从手机选照片'),
+          onPressed: _generating
+              ? null
+              : () async {
+                  try {
+                    final photo = await pickLocalPhoto();
+                    if (photo != null && mounted) {
+                      setState(() {
+                        _selected = photo;
+                        _error = null;
+                      });
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text('选照片失败：$e')));
+                    }
+                  }
+                },
+        ),
+        if (ref.watch(photosProvider).hasError)
+          TextButton(
+            onPressed: () => ref.invalidate(photosProvider),
+            child: const Text('云端相册暂不可用，点击重试；仍可选手机照片'),
+          ),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           crossAxisAlignment: CrossAxisAlignment.center,

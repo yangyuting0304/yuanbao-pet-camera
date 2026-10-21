@@ -9,6 +9,17 @@
 > **换电脑 / 换 AI 助手（Codex 等）→ [docs/新机器上手.md](docs/新机器上手.md)**，
 > 给 AI 助手的项目指令在仓库根的 **[AGENTS.md](AGENTS.md)**（自包含，零上下文可上手）。
 
+## 2026-10-21 晚间开发交接
+
+四项功能、元宝猫图标、真实本地成片已接入；详见 [本次交接](docs/2026-10-21_晚间开发交接.md)。首页功能以 `primary_tab_page.dart` 为准，旧「写真/相册/短片/P图」描述已同步 README。
+
+- 版本 `1.1.0+4`。实际 Apple Team ID **Y5486W7SD6**，Bundle ID **com.yuanbao.petCamera**。
+- 成片入口 `/movie`，旧 `/ai-video` 路由仅兼容跳转；无 AI 视频任务提交、轮询或视频模型适配器。共享后端环境变量 `AI_VIDEO_PROXY_URL` 为相册兼容继续保留。
+- 短片 Hive 元数据 + 手机文件/Web IndexedDB；禁止把所有视频读入列表内存。Web 本地照片也持久化，恢复上限24张。
+- 新照片导入统一 `prepare_local_photo.dart`，只读图片头获取尺寸，再用引擎限尺寸解码到长边960；Flutter Web 不支持 `ImageDescriptor.width`。
+- 相机互斥、iOS 端侧推理禁用、12MP Podfile 补丁均保留。Windows 无法验证 iOS 原生编码或生成 IPA/TestFlight。
+- 系统分享采用 `share_plus 12.0.2`；Web 不支持系统文件分享时下载真实文件。API参考：[插件说明](https://pub.dev/packages/share_plus/versions/12.0.2)。
+
 ## 一、30 秒速览
 
 | 项 | 内容 |
@@ -18,7 +29,7 @@
 | 仓库 | https://github.com/yangyuting0304/yuanbao-pet-camera（公开，main = 干净基线） |
 | 技术栈 | Flutter 3.x · camera 0.12.1 · camera_avfoundation 0.10.3+1 · tflite_flutter 0.12.1 · package:image · riverpod |
 | 当前状态 | 2026-10-21：产品已收敛为**只拍猫**；iOS 的 48MP 输出失控 / 全尺寸解码 / 快门闪退三根因已修，**待真机复验** |
-| 测试 | 245 个单元/契约测试全过（`flutter test -j 1`） |
+| 测试 | 250 个单元/契约测试全过（`flutter test -j 1`） |
 | 一句话 | **出片链路是纯 Dart 逐像素处理，内存是第一约束**——本项目几乎所有线上事故都源于"在手机上解一张 48MP 图" |
 
 ## 二、文件地图（改什么 → 去哪改）
@@ -43,7 +54,7 @@ lib/
 │  └─ app_env.dart             ← 编译期开关（dart-define）
 └─ tools/filter_lab/preview.dart ← **离线滤镜实验台**（调参先在这里看）
 ios/Podfile                    ← iOS 照片输出上限补丁（12MP）
-test/                          ← 245 个测试，按主题分文件
+test/                          ← 250 个测试，按主题分文件
 tools/filter_lab/              ← 实验台脚本
 ```
 

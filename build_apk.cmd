@@ -8,9 +8,9 @@ REM 解法：把源码镜像到纯 ASCII 路径 C:\yuanbao_build 构建，产物
 REM 日常开发仍在 F 盘；本脚本只负责「同步 → 构建 → 回拷」。
 setlocal
 set DEST=C:\yuanbao_build
-set SRC=%~dp0
+set "SRC=%~dp0."
 
-robocopy "%SRC%" "%DEST%" /MIR /XD build .dart_tool _scaffold .gradle /XF *.log /NFL /NDL /NJH /NJS >nul
+robocopy "%SRC%" "%DEST%" /MIR /R:1 /W:1 /XD build .dart_tool _scaffold .gradle .git .venv node_modules cloud_functions .filter_lab /XF *.log *.p8 *.p12 *.key .env .env.* /NFL /NDL /NJH /NJS >nul
 if errorlevel 8 ( echo [失败] 源码同步到 %DEST% 出错 & exit /b 1 )
 
 pushd %DEST%
@@ -18,7 +18,7 @@ call flutter build apk --release
 if errorlevel 1 ( popd & echo [失败] APK 构建失败，见上方日志 & exit /b 1 )
 popd
 
-robocopy "%DEST%\build\app\outputs\flutter-apk" "%SRC%build\app\outputs\flutter-apk" /E /NFL /NDL /NJH /NJS >nul
+robocopy "%DEST%\build\app\outputs\flutter-apk" "%SRC%\build\app\outputs\flutter-apk" /E /NFL /NDL /NJH /NJS >nul
 echo.
 echo 完成：build\app\outputs\flutter-apk\app-release.apk
 endlocal

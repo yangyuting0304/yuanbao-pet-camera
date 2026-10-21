@@ -14,7 +14,6 @@ import 'package:pet_camera/data/models.dart';
 import 'package:pet_camera/data/seed_config.dart';
 import 'package:pet_camera/data/seed_repository.dart';
 import 'package:pet_camera/data/short_videos.dart';
-import 'package:video_player/video_player.dart';
 
 /// 一级页面容器。
 /// 统一管理首页、相册页和中间拍照操作，避免一级页面切换时底部栏消失。
@@ -108,12 +107,11 @@ class HomePage extends ConsumerWidget {
     ),
     _HomeFeature(
       title: '一键成片',
-      subtitle: '一张照片让毛孩动起来',
-      tag: 'AI 视频',
+      subtitle: '照片和实拍视频，剪成珍藏',
+      tag: '模板剪辑',
       icon: MingCuteIcons.videoLine,
       imagePath: SeedConfig.photoUrl('feat_video_thumb.jpg'),
-      videoAssetPath: 'assets/seed/photos/feat_video_compressed.mp4',
-      route: '/ai-video',
+      route: '/movie',
     ),
     _HomeFeature(
       title: '毛孩美颜',
@@ -789,12 +787,7 @@ class _HeroPreviewThumb extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
-      child: AppImage(
-        url: url,
-        width: 30,
-        height: 30,
-        memCacheWidth: 60,
-      ),
+      child: AppImage(url: url, width: 30, height: 30, memCacheWidth: 60),
     );
   }
 }
@@ -1067,7 +1060,6 @@ class _FeatureCard extends StatelessWidget {
                   width: double.infinity,
                   child: _FeatureCover(
                     imagePath: feature.imagePath,
-                    videoAssetPath: feature.videoAssetPath,
                   ),
                 ),
                 Padding(
@@ -1144,87 +1136,13 @@ class _FeatureCard extends StatelessWidget {
 
 /// 惊喜卡片封面：默认显示静态图；如果有视频资源，就自动静音循环播放。
 /// 视频失败时自动回退到封面图，避免首页出现黑屏或空白块。
-class _FeatureCover extends StatefulWidget {
-  const _FeatureCover({required this.imagePath, this.videoAssetPath});
-
+class _FeatureCover extends StatelessWidget {
+  const _FeatureCover({required this.imagePath});
   final String imagePath;
-  final String? videoAssetPath;
-
   @override
-  State<_FeatureCover> createState() => _FeatureCoverState();
-}
-
-class _FeatureCoverState extends State<_FeatureCover> {
-  VideoPlayerController? _controller;
-  bool _videoReady = false;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.videoAssetPath != null) {
-      Future<void>.delayed(const Duration(milliseconds: 200), _startVideo);
-    }
-  }
-
-  Future<void> _startVideo() async {
-    final videoAssetPath = widget.videoAssetPath;
-    if (videoAssetPath == null || _videoReady) {
-      return;
-    }
-
-    try {
-      final controller = VideoPlayerController.asset(videoAssetPath);
-      _controller = controller;
-      await controller.initialize();
-      await controller.setLooping(true);
-      await controller.setVolume(0);
-      await controller.play();
-      if (!mounted) {
-        await controller.dispose();
-        return;
-      }
-      setState(() {
-        _videoReady = true;
-      });
-    } catch (_) {
-      // 保持静态封面即可，这里不额外抛错打断首页渲染。
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppUi.radiusCard),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          AppImage(
-            url: widget.imagePath,
-            fit: BoxFit.cover,
-            placeholderColor: const Color(0xFFF1F3F5),
-          ),
-          if (_videoReady &&
-              _controller != null &&
-              _controller!.value.isInitialized)
-            FittedBox(
-              fit: BoxFit.cover,
-              clipBehavior: Clip.hardEdge,
-              child: SizedBox(
-                width: _controller!.value.size.width,
-                height: _controller!.value.size.height,
-                child: VideoPlayer(_controller!),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => ClipRRect(
+    borderRadius: BorderRadius.circular(AppUi.radiusCard),
+    child: AppImage(url: imagePath, fit: BoxFit.cover, placeholderColor: const Color(0xFFF1F3F5)));
 }
 
 class _RecentPhotoStrip extends StatelessWidget {
@@ -1527,7 +1445,8 @@ class _MineProfileCard extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(32),
                   child: AppImage(
-                    url: firstPet?.avatarUrl ??
+                    url:
+                        firstPet?.avatarUrl ??
                         SeedConfig.photoUrl('yuanbao_headshot.png'),
                     width: 64,
                     height: 64,
@@ -1715,7 +1634,6 @@ class _HomeFeature {
     required this.icon,
     required this.imagePath,
     required this.route,
-    this.videoAssetPath,
   });
 
   final String title;
@@ -1724,5 +1642,4 @@ class _HomeFeature {
   final String icon;
   final String imagePath;
   final String route;
-  final String? videoAssetPath;
 }

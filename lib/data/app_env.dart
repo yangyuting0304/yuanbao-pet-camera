@@ -6,14 +6,14 @@
 /// 若直接用 Xcode「Product > Archive」，或命令行忘记传 `--dart-define`，
 /// `String.fromEnvironment` 一律返回空串，于是：
 ///   - [LibraryService] 解析不出代理地址，抛 `LibraryException: 未配置代理`；
-///   - 各 AI 服务静默降级为「演示模式」（回显原图 / 内置视频），看起来像功能坏了。
+///   - 图像服务因缺少配置而不可用；当前会明确提示，不生成演示结果。
 ///
 /// 因此这里统一为每个变量配上**生产环境默认值**（与 `SeedConfig.baseUrl` 的做法一致）：
 ///   - 传了 `--dart-define` / `--dart-define-from-file`  -> 用注入值（本地、局域网调试照旧）
 ///   - 没传                                              -> 用生产默认值，任何打包方式都能联网
 library;
 
-/// 生产代理根域名（AI 写真 / 图生视频 / 相册库共用同一套后端）。
+/// 生产代理根域名（AI 写真 / 相册库共用同一套后端）。
 ///
 /// 覆盖方式（Mac 上打 iOS 包同理）：
 /// ```bash
@@ -31,7 +31,8 @@ class AppEnv {
     defaultValue: '$_kProdProxyRoot/api/beautify',
   );
 
-  /// 图生视频 / 相册库 / 上传 共用的代理**根地址**（不含路径）。
+  /// 相册库 / 上传 共用的代理**根地址**（不含路径）。
+  /// 保留旧 AI_VIDEO_PROXY_URL 环境变量兼容既有部署；视频生成已移除。
   ///
   /// 用法：`'${AppEnv.aiVideoProxyRoot}/api/seed'`、`.../api/works`、`.../api/upload`。
   static const String aiVideoProxyUrl = String.fromEnvironment(

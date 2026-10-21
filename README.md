@@ -1,6 +1,13 @@
 # 元宝拍拍 (yuanbao-pet-camera)
 
-宠物影像作品集 Demo：基于 Flutter Web 的跨平台应用，集成云端 AI（通义万相 DashScope）实现**写真 / 相册 / 短片 / P 图**四大能力。
+Flutter 猫咪影像 App「元宝拍拍」，首页四大功能为 **毛孩写真 / 一键成片 / 毛孩美颜 / 成长手记**，支持 Android、iOS 与 Web。
+
+- 毛孩写真：保留现有云端图像生成，支持选本地照片、保存和分享；服务未配置时明确报错。
+- 一键成片：用自己的照片制作模板短片，或裁剪实拍视频；可排序、加字幕、配乐、预览、保存和分享真实视频，**已移除 AI 生成视频**。
+- 毛孩美颜：滤镜、贴纸、背景与画幅编辑；本地编辑可离线保存，既有云端图像编辑仍需服务配置。
+- 成长手记：新建自己的猫咪档案，记录、修改、删除体重/疫苗/趣事，支持本地持久化和 JSON 导出。
+
+晚间改造与验证说明：[2026-10-21 交接](docs/2026-10-21_晚间开发交接.md)。iOS 本地视频编码已接入 AVFoundation，仍需 Codemagic 构建与 iPhone 真机复验。
 
 > **要改代码 / 接手开发 → 先看 [HANDOVER.md](HANDOVER.md)**（架构红线、拍照链路、
 > 最近的事故复盘、验证方法）。待办与未解决问题见 [TODO.md](TODO.md)。
@@ -10,7 +17,7 @@
 > Codex 交接方式）。给 AI 助手的项目指令在仓库根的 **[AGENTS.md](AGENTS.md)**。
 
 ## 技术栈
-- Flutter 3.x（Web 渲染器，纯 Dart 无 wasm 依赖）
+- Flutter 3.44.7 / Dart 3.12.2；Android Media3、iOS AVFoundation、Web MediaRecorder 本地视频编码
 - 图标库：lucide_flutter
 - 云端 AI 代理：阿里云 ECS（Express 代理）+ 通义万相 / 百炼图像编辑 API
 - 媒体存储：腾讯云 COS（种子图、拍摄的照片与视频、相册清单）；前端静态资源不上传 COS

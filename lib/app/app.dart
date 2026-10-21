@@ -1,8 +1,8 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:pet_camera/app/ai_video_page.dart';
-import 'package:pet_camera/app/ai_video_result_page.dart';
+import 'package:pet_camera/app/movie_page.dart';
+import 'package:pet_camera/app/short_video_page.dart';
 import 'package:pet_camera/app/primary_tab_page.dart';
 import 'package:pet_camera/app/tokens.dart';
 import 'package:pet_camera/app/pages.dart';
@@ -32,8 +32,10 @@ class PetCameraApp extends ConsumerWidget {
         '/mine': (c) => const MinePage(),
         '/camera': (c) => const CameraPage(),
         '/portrait': (c) => const PortraitPage(),
-        '/ai-video': (c) => const AiVideoPage(),
-        '/ai-video-result': (c) => const AiVideoResultPage(),
+        '/movie': (c) => const MoviePage(),
+        // Legacy bookmarks open the local editor; never submit AI tasks.
+        '/ai-video': (c) => const MoviePage(),
+        '/ai-video-result': (c) => const ShortVideoLibraryPage(),
         '/retouch': (c) => const RetouchPage(),
         '/pet-profile': (c) => const PetProfilePage(),
         '/settings': (c) => const SettingsPage(),

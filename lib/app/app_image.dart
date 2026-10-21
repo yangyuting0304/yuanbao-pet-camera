@@ -50,6 +50,18 @@ class _AppImageState extends State<AppImage> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.url.isEmpty) {
+      return SizedBox(
+        width: widget.width,
+        height: widget.height,
+        child: ColoredBox(
+          color: widget.placeholderColor,
+          child: const Center(
+            child: Icon(Icons.pets, color: Color(0xFFB79150)),
+          ),
+        ),
+      );
+    }
     return CachedNetworkImage(
       // key 变化即触发重新加载，用于实现「重试」。
       key: ValueKey<int>(_retryKey),

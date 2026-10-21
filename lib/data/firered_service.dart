@@ -40,9 +40,7 @@ class FireRedService {
     required String prompt,
   }) async {
     if (_proxyUrl.isEmpty) {
-      // 演示模式：未配置代理，模拟耗时后回显源图。
-      await Future<void>.delayed(const Duration(seconds: 1));
-      return FireRedResult(imageBytes: sourceBytes, demo: true);
+      throw const FireRedException('AI编辑服务尚未配置；滤镜、贴纸和形状可在本机使用');
     }
     final resp = await http
         .post(

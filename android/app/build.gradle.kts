@@ -53,6 +53,12 @@ flutter {
     source = "../.."
 }
 
+// Local template video export: Android's codec pipeline, no cloud/AI service.
+dependencies {
+    implementation("androidx.media3:media3-transformer:1.9.4")
+    implementation("androidx.media3:media3-effect:1.9.4")
+}
+
 // tflite_flutter 传递引入 tensorflow-lite / -gpu / -api 三个 AAR，
 // 三者共用包名 org.tensorflow.lite，AGP 的唯一 namespace 校验直接失败。
 // 本项目只用 CPU 推理：排除 GPU 与 api 拆分模块，保留自包含的 core。

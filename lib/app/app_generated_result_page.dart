@@ -5,8 +5,9 @@ import 'package:pet_camera/app/app_back_button.dart';
 import 'package:pet_camera/app/app_primary_action_button.dart';
 import 'package:pet_camera/app/mingcute_icons.dart';
 import 'package:pet_camera/app/tokens.dart';
+import 'package:pet_camera/app/share_media.dart';
 
-typedef AppResultSaveCallback = Future<void> Function();
+typedef AppResultSaveCallback = Future<String> Function();
 
 /// 通用生成结果页。
 /// 统一“毛孩写真”和“AI 编辑”的结果展示与底部保存按钮样式。
@@ -42,11 +43,11 @@ class _AppGeneratedResultPageState extends State<AppGeneratedResultPage> {
     if (_saving) return;
     setState(() => _saving = true);
     try {
-      await widget.onSave();
+      final message = await widget.onSave();
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('已保存到相册')));
+      ).showSnackBar(SnackBar(content: Text(message)));
       await Future<void>.delayed(const Duration(milliseconds: 800));
       if (mounted) {
         Navigator.of(context).pop();
@@ -101,7 +102,32 @@ class _AppGeneratedResultPageState extends State<AppGeneratedResultPage> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(AppUi.radiusCard),
-            child: Image.memory(widget.resultBytes, fit: BoxFit.cover),
+            child: Image.memory(
+              widget.resultBytes,
+              fit: BoxFit.cover,
+              cacheWidth: 1080,
+            ),
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.share_outlined),
+            label: const Text('分享照片'),
+            onPressed: () async {
+              try {
+                final png = widget.resultBytes.first == 137;
+                await shareMedia(
+                  context,
+                  widget.resultBytes,
+                  filename: 'yuanbao_photo.${png ? 'png' : 'jpg'}',
+                  mime: png ? 'image/png' : 'image/jpeg',
+                );
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('分享未完成：$e')));
+                }
+              }
+            },
           ),
           if (widget.demo) ...[
             const SizedBox(height: 8),

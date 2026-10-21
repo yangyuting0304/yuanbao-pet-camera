@@ -68,3 +68,7 @@ dist/*.apk
 # （实验台脚本本身在 tools/filter_lab/，是要入库的）
 .filter_lab/
 
+# Local font tools and failed build copy-back directories.
+tools/font-subset/node_modules/
+/.build/
+

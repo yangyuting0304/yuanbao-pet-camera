@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pet_camera/app/app_back_button.dart';
 import 'package:pet_camera/app/media_platform.dart';
+import 'package:pet_camera/app/share_media.dart';
 import 'package:pet_camera/app/mingcute_icons.dart';
 import 'package:pet_camera/app/tokens.dart';
 import 'package:pet_camera/data/short_videos.dart';
@@ -34,7 +35,7 @@ const _captionStyles = <_CaptionStyle>[
   ),
 ];
 
-/// 我的短片页：独立展示已保存的短片列表（AI 成片 / 相机录制）。
+/// 我的短片页：独立展示已保存的短片列表（模板成片 / 相机录制）。
 class ShortVideoLibraryPage extends ConsumerWidget {
   const ShortVideoLibraryPage({super.key});
 
@@ -71,6 +72,11 @@ class ShortVideoLibraryPage extends ConsumerWidget {
         elevation: 0,
         scrolledUnderElevation: 0,
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => Navigator.pushNamed(context, '/movie'),
+        icon: const Icon(Icons.add),
+        label: const Text('制作短片'),
+      ),
       body: shorts.isEmpty
           ? Center(
               child: Column(
@@ -83,7 +89,7 @@ class ShortVideoLibraryPage extends ConsumerWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'AI 生成的短片会显示在这里',
+                    '制作或录制的短片会显示在这里',
                     style: TextStyle(
                       fontSize: AppUi.fontBody,
                       color: t.textSecondary,
@@ -164,7 +170,7 @@ class _LibrarySection extends ConsumerWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'AI 生成的短片会显示在这里',
+                  '制作或录制的短片会显示在这里',
                   style: TextStyle(
                     fontSize: AppUi.fontBody,
                     color: t.textSecondary,
@@ -189,6 +195,36 @@ class _LibrarySection extends ConsumerWidget {
               final secs = (s.durationMs / 1000).ceil();
               return GestureDetector(
                 onTap: () => onPlay(s),
+                onLongPress: () async {
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('删除短片'),
+                      content: const Text('删除应用内这段短片？不会删除系统相册中的副本。'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('取消'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('删除'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed == true) {
+                    try {
+                      await ref.read(shortVideosProvider.notifier).remove(s);
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(SnackBar(content: Text('删除失败：$e')));
+                      }
+                    }
+                  }
+                },
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -272,6 +308,8 @@ class _PlaybackDialogState extends State<_PlaybackDialog> {
 
   bool _playing = false;
   bool _ready = false;
+  String? _error;
+  bool _downloading = false;
   int _durationMs = 0;
   String? _videoUrl;
   String? _musicUrl;
@@ -291,16 +329,30 @@ class _PlaybackDialogState extends State<_PlaybackDialog> {
 
   Future<void> _init() async {
     final e = widget.edit;
-    _videoUrl = await MediaPlatform.createMediaUrl(e.videoBytes, e.mimeType);
-    if (e.musicBytes != null) {
-      _musicUrl = await MediaPlatform.createMediaUrl(e.musicBytes!, 'audio/mpeg');
+    try {
+      final bytes = await e.readVideoBytes();
+      if (!mounted) return;
+      _videoUrl = await MediaPlatform.createMediaUrl(bytes, e.mimeType);
+      if (!mounted) {
+        await MediaPlatform.releaseMediaUrl(_videoUrl!);
+        return;
+      }
+      if (e.musicBytes != null) {
+        _musicUrl = await MediaPlatform.createMediaUrl(
+          e.musicBytes!,
+          'audio/mpeg',
+        );
+      }
+      final c = MediaPlatform.videoController(_videoUrl!);
+      _c = c;
+      await c.initialize();
+      if (!mounted) return;
+      _durationMs = c.value.duration.inMilliseconds;
+      c.addListener(_tick);
+      setState(() => _ready = true);
+    } catch (e) {
+      if (mounted) setState(() => _error = '无法播放这段视频：$e');
     }
-    final c = MediaPlatform.videoController(_videoUrl!);
-    _c = c;
-    await c.initialize();
-    _durationMs = c.value.duration.inMilliseconds;
-    c.addListener(_tick);
-    if (mounted) setState(() => _ready = true);
   }
 
   void _tick() {
@@ -324,7 +376,10 @@ class _PlaybackDialogState extends State<_PlaybackDialog> {
     await c.play();
     if (_musicUrl != null) {
       try {
-        await _ensureAudio().play(MediaPlatform.audioSource(_musicUrl!), volume: 0.6);
+        await _ensureAudio().play(
+          MediaPlatform.audioSource(_musicUrl!),
+          volume: 0.6,
+        );
       } catch (_) {}
     }
     if (mounted) setState(() => _playing = true);
@@ -348,7 +403,11 @@ class _PlaybackDialogState extends State<_PlaybackDialog> {
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
-    final style = _captionStyles[widget.edit.captionStyle];
+    final style =
+        _captionStyles[widget.edit.captionStyle.clamp(
+          0,
+          _captionStyles.length - 1,
+        )];
     final caption = widget.edit.caption;
     return Dialog(
       backgroundColor: t.surface,
@@ -375,7 +434,7 @@ class _PlaybackDialogState extends State<_PlaybackDialog> {
                           fit: StackFit.expand,
                           children: [
                             Center(child: VideoPlayer(_c!)),
-                            if (caption.isNotEmpty)
+                            if (caption.isNotEmpty && !widget.edit.rendered)
                               Positioned(
                                 left: 16,
                                 right: 16,
@@ -424,10 +483,83 @@ class _PlaybackDialogState extends State<_PlaybackDialog> {
                             ),
                           ],
                         )
-                      : const Center(child: CircularProgressIndicator()),
+                      : Center(
+                          child: _error == null
+                              ? const CircularProgressIndicator()
+                              : Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Text(
+                                    _error!,
+                                    style: const TextStyle(color: Colors.white),
+                                  ),
+                                ),
+                        ),
                 ),
               ),
               const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                children: [
+                  TextButton(
+                    onPressed: () async {
+                      try {
+                        final bytes = await widget.edit.readVideoBytes();
+                        if (!context.mounted) return;
+                        await shareMedia(
+                          context,
+                          bytes,
+                          filename:
+                              'yuanbao_${widget.edit.id}.${widget.edit.mimeType.contains('webm') ? 'webm' : 'mp4'}',
+                          mime: widget.edit.mimeType,
+                        );
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(
+                            context,
+                          ).showSnackBar(SnackBar(content: Text('分享未完成：$e')));
+                        }
+                      }
+                    },
+                    child: const Text('分享视频'),
+                  ),
+                  TextButton(
+                    onPressed: _downloading
+                        ? null
+                        : () async {
+                            setState(() => _downloading = true);
+                            try {
+                              final bytes = await widget.edit.readVideoBytes();
+                              await MediaPlatform.downloadBytes(
+                                bytes,
+                                'yuanbao_${widget.edit.id}.${widget.edit.mimeType.contains('webm') ? 'webm' : 'mp4'}',
+                              );
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('视频已导出')),
+                                );
+                              }
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('导出失败：$e')),
+                                );
+                              }
+                            } finally {
+                              if (mounted) setState(() => _downloading = false);
+                            }
+                          },
+                    child: Text(_downloading ? '保存中…' : '导出视频'),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      final navigator = Navigator.of(context);
+                      navigator.pop();
+                      navigator.pushNamed('/movie', arguments: widget.edit);
+                    },
+                    child: const Text('剪辑这段视频'),
+                  ),
+                ],
+              ),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(

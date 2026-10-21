@@ -13,6 +13,9 @@
 // （旧首页 OnboardingPage 及其全套组件、旧底栏 _InsBottomNav）经确认
 // 零引用后删除 —— 首页早已由 primary_tab_page.dart 接管。
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -30,7 +33,9 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:pet_camera/app/album_import.dart';
+import 'package:pet_camera/app/local_photo_picker.dart';
 import 'package:pet_camera/app/app_image.dart';
+import 'package:pet_camera/app/creative_photo_save.dart';
 import 'package:pet_camera/app/app_generated_result_page.dart';
 import 'package:pet_camera/app/app_primary_action_button.dart';
 import 'package:pet_camera/app/app_photo_preview_panel.dart';

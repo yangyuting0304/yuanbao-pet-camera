@@ -4,17 +4,13 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:pet_camera/app/app.dart';
 import 'package:pet_camera/data/app_font.dart';
 import 'package:pet_camera/data/live_photo.dart';
-import 'package:pet_camera/data/task_store.dart';
 
 void main() async {
   // camera 插件需要 binding 初始化（权限/相机原生通道）
   WidgetsFlutterBinding.ensureInitialized();
   // 品牌字体与本地库并行初始化，且二者都不允许拖住首屏：
   // 字体超时降级为系统字体，本地库失败降级为内存模式。
-  await Future.wait<void>(<Future<void>>[
-    preloadBrandFont(),
-    _initHive(),
-  ]);
+  await Future.wait<void>(<Future<void>>[preloadBrandFont(), _initHive()]);
   runApp(const ProviderScope(child: PetCameraApp()));
 }
 
@@ -23,7 +19,10 @@ Future<void> _initHive() async {
   try {
     await Hive.initFlutter();
     await Hive.openBox('growthRecords');
-    await Hive.openBox(TaskStore.boxName);
+    await Hive.openBox('shortVideos');
+    await Hive.openBox('shortVideoBytes');
+    await Hive.openBox('capturedPhotoBytes');
+    await Hive.openBox('petProfiles');
     // 应用级开关（动态照片等）。与业务数据分箱，避免相互影响。
     await Hive.openBox(LivePhotoPrefs.boxName);
   } catch (e) {
