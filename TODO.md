@@ -364,6 +364,19 @@ dart run tools/filter_lab/preview.dart <实拍图.jpg> <输出目录> current su
 若 Podfile 补丁没生效（构建日志里应有「已把 iOS 照片输出上限压到 12MP」
 或对应的警告），把日志给我。
 
+## 六之四、连拍报「上一张尚未返回」（2026-10-21 已修，待真机验证）
+
+**现场报错**：`CameraException(Previous capture has not returned yet., takePicture was called before the previous capture returned.)`。
+
+**根因**：`Future.timeout` 只让 Dart 调用方停止等待，不会取消相机插件中的原生拍摄。
+原连拍和自动毛色分析分别在 `takePicture()` 外套了 8 秒 / 10 秒超时；超时后
+业务层释放 `_photoInFlight`，但相机控制器仍保持 `isTakingPicture=true`，下一次
+快门便被 `CameraController.takePicture()` 拒绝，造成拍照失败。
+
+**修复**：两个拍照入口等待 `takePicture()` 真正完成后再释放互斥；30 秒 UI 看门狗
+只在没有相机请求飞行时复位，不再靠超时释放拍摄锁。分析与静态检查通过；需要在
+iPhone 真机上连续拍摄验证。Windows 无法本机生成 iOS 包，需通过 Codemagic 云构建。
+
 ## 六、待你决策的事项（iOS 相关见上一节）
 
 1. **P0-4 定时任务的频率 / 范围 / 凭据来源**（上一轮提问尚未回答）。

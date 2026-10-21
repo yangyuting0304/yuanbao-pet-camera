@@ -33,10 +33,6 @@ class _CameraPageState extends ConsumerState<CameraPage> {
       ? const Duration(milliseconds: 800)
       : const Duration(milliseconds: 250);
 
-  /// 毛色分析的抓帧超时。takePicture 在个别机型上会长时间不返回，
-  /// 没有超时会让「分析中」永久卡住，用户连手动重试都点不动。
-  static const Duration _autoDetectTimeout = Duration(seconds: 10);
-
   /// 切到宠物模式后延迟多久再抓帧：等新控制器的预览首帧稳定。
   /// 刚重建完就 takePicture 会和相机会话抢资源，在 Android 上可能把预览卡死。
   static const Duration _autoDetectDelay = Duration(milliseconds: 800);
@@ -480,7 +476,10 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     // 抓帧要独占相机会话：图像流与拍照在 Android 上会互相抢占。
     final paused = await _pauseTracking();
     try {
-      final shot = await c.takePicture().timeout(_autoDetectTimeout);
+      // `Future.timeout` 不会取消相机插件正在执行的拍摄。若超时后释放
+      // `_photoInFlight`，下一次快门会撞上仍处于 isTakingPicture 的控制器，
+      // 抛出「Previous capture has not returned yet」。因此必须等真实拍摄结束。
+      final shot = await c.takePicture();
       final bytes = await shot.readAsBytes();
 
       // 毛色分析只需要 160px 的采样，所以**先缩再解**：用原生解码器把图缩到
@@ -899,16 +898,12 @@ class _CameraPageState extends ConsumerState<CameraPage> {
         debugPrint('[连拍] 控制器已变更或未就绪，中止第 ${i + 1}/${count} 张');
         break;
       }
-      // 单张加超时：相机处于异常状态时 takePicture 可能**永久不返回**，
-      // 会把整条拍照链路连同快门标志一起挂死（实拍反馈的"点了没反应"）。
-      //
-      // 超时后的策略：**已经拍到几张就用几张**，不因为最后一张卡住就把整次
-      // 拍照判死。5 连拍要连开 5 次快门，中途卡一张很常见；为了第 5 张丢掉
-      // 前 4 张（用户白按一次快门）比少融合几帧严重得多。
+      // 不要给 takePicture 套 Future.timeout：超时只停止等待，不会取消
+      // 原生拍摄。若此处超时后释放应用互斥锁，下一次拍照会撞上仍在进行的
+      // 相机请求，并抛出「Previous capture has not returned yet」。
+      // 连拍只有在上一张真实返回后才能继续下一张。
       try {
-        final shot = await c
-            .takePicture()
-            .timeout(const Duration(seconds: 8));
+        final shot = await c.takePicture();
         final bytes = await shot.readAsBytes();
         shots.add(bytes);
         unawaited(
@@ -1146,14 +1141,17 @@ class _CameraPageState extends ConsumerState<CameraPage> {
     // 快门去重：快门挂在 onTapDown 上，连点会让两次连拍在同一控制器上
     // 交错——轻则串帧，重则 takePicture 抛异常把照片丢掉。
     //
-    // 看门狗：去重本身有风险——底层 takePicture 一旦永久挂起（相机异常时
-    // 并不罕见），这个标志会永远是 true，表现就是「快门彻底没反应」
-    // （实拍反馈过）。超过 30 秒强制复位：宁可偶发重入，
-    // 也不能让用户永久失去快门。
+    // 30 秒后只在相机请求已经结束时复位 UI 去重标志。相机请求仍在飞时，
+    // 不能强行释放互斥：Future.timeout 不会取消原生拍摄，放行下一次快门
+    // 会触发 camera 插件的「Previous capture has not returned yet」。
     final now = DateTime.now();
     if (_capturing) {
       final since = _capturingSince;
       if (since != null && now.difference(since).inSeconds < 30) return;
+      if (_photoInFlight) {
+        _showCameraBusyHint('上一张照片仍在拍摄中，请稍候');
+        return;
+      }
       debugPrint('[快门] 上一次拍照超过 30 秒未结束，强制复位');
     }
     _capturing = true;

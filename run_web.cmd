@@ -6,4 +6,6 @@ REM 改后端地址：编辑 frontend_env.json
 REM ============================================================
 cd /d "%~dp0"
 echo [run_web] 使用 frontend_env.json 启动前端...
-flutter run -d chrome --web-port=8080 --dart-define-from-file=frontend_env.json
+REM 使用 web-server 避免 Flutter 连接 Chrome DevTools 端口失败；
+REM 启动后在浏览器访问 http://localhost:8080。
+flutter run -d web-server --web-hostname=0.0.0.0 --web-port=8080 --dart-define-from-file=frontend_env.json

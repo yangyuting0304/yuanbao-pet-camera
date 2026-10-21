@@ -19,6 +19,14 @@
 # - 免费额度：macOS 构建每月 500 分钟，本项目 iOS 构建约 10~20 分钟/次。
 # - 未在 push 时自动触发（见 triggering），避免每次提交都消耗额度；
 #   需要时手动点构建即可。
+#
+# ## TestFlight（组织开发者账号）
+#
+# `ios-testflight` 会使用 App Store 分发签名并上传到 TestFlight。
+# 首次运行前，请在 Codemagic 团队设置中配置 App Store Connect API 集成，
+# 集成名称必须是 `yuanbao-asc`；在 App Store Connect 中创建名为
+# `Yuanbao Internal` 的内部测试组，并创建 Bundle ID 为
+# `com.yuanbao.petCamera` 的 iOS App 记录。
 
 workflows:
   ios-unsigned:
@@ -71,3 +79,51 @@ workflows:
       - build/ios/iphoneos/*.ipa
       - /tmp/xcodebuild_logs/*.log
       - flutter_drive.log
+
+  ios-testflight:
+    name: iOS TestFlight（内部测试）
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+
+    integrations:
+      app_store_connect: yuanbao-asc
+
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.yuanbao.petCamera
+      flutter: 3.44.7
+      xcode: latest
+      cocoapods: default
+
+    cache:
+      cache_paths:
+        - $HOME/Library/Caches/CocoaPods
+        - $FLUTTER_ROOT/.pub-cache
+
+    scripts:
+      - name: 拉取 Dart 依赖
+        script: flutter pub get
+
+      - name: 安装 iOS Pods
+        script: |
+          cd ios
+          rm -rf Pods Podfile.lock .symlinks
+          pod install
+
+      - name: 配置 iOS 签名
+        script: xcode-project use-profiles
+
+      - name: 构建签名 IPA
+        script: flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups:
+          - Yuanbao Internal
