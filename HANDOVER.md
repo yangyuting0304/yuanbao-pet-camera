@@ -5,6 +5,9 @@
 > 细节不在这里：待办与事故复盘见 [TODO.md](TODO.md)，环境搭建见
 > [README_setup.md](README_setup.md)，部署见 [DEPLOY.md](DEPLOY.md)，
 > 构建见 [README_build.md](README_build.md)。
+>
+> **换电脑 / 换 AI 助手（Codex 等）→ [docs/新机器上手.md](docs/新机器上手.md)**，
+> 给 AI 助手的项目指令在仓库根的 **[AGENTS.md](AGENTS.md)**（自包含，零上下文可上手）。
 
 ## 一、30 秒速览
 

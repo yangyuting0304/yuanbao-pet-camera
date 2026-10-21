@@ -5,6 +5,9 @@
 > **要改代码 / 接手开发 → 先看 [HANDOVER.md](HANDOVER.md)**（架构红线、拍照链路、
 > 最近的事故复盘、验证方法）。待办与未解决问题见 [TODO.md](TODO.md)。
 > 环境搭建见 [README_setup.md](README_setup.md)，构建见 [README_build.md](README_build.md)。
+>
+> **换电脑 / 换 AI 助手 →** [docs/新机器上手.md](docs/新机器上手.md)（含工具链、密钥、
+> Codex 交接方式）。给 AI 助手的项目指令在仓库根的 **[AGENTS.md](AGENTS.md)**。
 
 ## 技术栈
 - Flutter 3.x（Web 渲染器，纯 Dart 无 wasm 依赖）
