@@ -49,14 +49,28 @@ const path = require('node:path');
       const edited = await window.yuanbaoExportMovie({slides:[],video:movie.base64,
         videoExtension:movie.mimeType.includes('mp4')?'mp4':'webm',trimStartMs:0,durationMs:1500,muteOriginal:true,
         overlay:overlay.toDataURL('image/png').split(',')[1]});
-      return {movie, edited, width:v.videoWidth,height:v.videoHeight, seconds};
+      const slow = await window.yuanbaoExportMovie({slides:[],video:movie.base64,
+        videoExtension:movie.mimeType.includes('mp4')?'mp4':'webm',trimStartMs:0,durationMs:3000,
+        segments:[{start_ms:0,end_ms:1000,speed:1},{start_ms:1000,end_ms:1500,speed:.5},{start_ms:2500,end_ms:3500,speed:1}],
+        subjectFill:true,focusX:.85,focusY:.5,zoom:1.2,muteOriginal:true});
+      const slowUrl=URL.createObjectURL(new Blob([Uint8Array.from(atob(slow.base64),c=>c.charCodeAt(0))],{type:slow.mimeType}));
+      v.src=slowUrl;await new Promise((resolve,reject)=>{v.onloadedmetadata=resolve;v.onerror=reject;});
+      if(!Number.isFinite(v.duration)||Math.abs(v.duration-3)>.7)throw new Error('Speed-ramp duration is incorrect: '+v.duration);
+      const before=await pixelAt(.5), after=await pixelAt(2.5);
+      if(before[0]<=before[2]||after[2]<=after[0])throw new Error('Source cuts are incorrect');
+      const motion=JSON.parse(await window.yuanbaoAnalyzeMovie({video:movie.base64,
+        videoExtension:movie.mimeType.includes('mp4')?'mp4':'webm',startMs:0,durationMs:3500,focusX:.5,focusY:.5}));
+      if(motion.length!==40||!motion.some(m=>m.motion>1.5))throw new Error('Motion analysis did not sample actual frames: '+JSON.stringify(motion));
+      URL.revokeObjectURL(slowUrl);
+      return {movie, edited, slow, slowSeconds:v.duration, motionSamples:motion.length,width:v.videoWidth,height:v.videoHeight, seconds};
     });
     const ext = result.movie.mimeType.includes('mp4') ? 'mp4' : 'webm';
     fs.mkdirSync('.dart_tool/movie_verification', {recursive:true});
     fs.writeFileSync(`.dart_tool/movie_verification/slideshow.${ext}`,Buffer.from(result.movie.base64,'base64'));
     fs.writeFileSync(`.dart_tool/movie_verification/trimmed.${ext}`,Buffer.from(result.edited.base64,'base64'));
+    fs.writeFileSync(`.dart_tool/movie_verification/slow_moment.${ext}`,Buffer.from(result.slow.base64,'base64'));
     console.log(JSON.stringify({width:result.width,height:result.height,durationSeconds:result.seconds,
       mimeType:result.movie.mimeType, slideshowBytes:Buffer.from(result.movie.base64,'base64').length,
-      trimmedBytes:Buffer.from(result.edited.base64,'base64').length}));
+      trimmedBytes:Buffer.from(result.edited.base64,'base64').length,slowSeconds:result.slowSeconds,motionSamples:result.motionSamples}));
   } finally { await browser.close(); }
 })().catch(e=>{console.error(e);process.exitCode=1;});

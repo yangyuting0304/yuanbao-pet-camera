@@ -16,7 +16,7 @@ import json
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "assets/brand/app_icon_yuanbao_cat.png"
+SRC = ROOT / "assets/brand/app_icon_yuanbao_photo.png"
 
 # maskable 图标安全区: 内容占画布比例, 四周用底色填充
 MASKABLE_CONTENT_RATIO = 0.78

@@ -14,7 +14,7 @@ Flutter 宠物相机 App「元宝拍拍」（Android 为主 / iOS 次 / Web 演�
 - 仓库：`https://github.com/yangyuting0304/yuanbao-pet-camera`（公开，main = 干净基线）
 - 技术栈：Flutter 3.44.7 / Dart 3.12.2 · camera 0.12.1 · camera_avfoundation 0.10.3+1 ·
   tflite_flutter 0.12.1 · package:image · riverpod
-- 测试：250 个（`flutter test -j 1` 全过）
+- 测试：254 个（`flutter test -j 1` 全过）
 
 ## 2. 上手命令
 

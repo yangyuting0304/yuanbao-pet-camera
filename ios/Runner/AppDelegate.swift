@@ -20,6 +20,8 @@ import AVFoundation
       guard let self = self else { return }
       if call.method == "export", let args = call.arguments as? [String: Any] {
         self.movieExporter.export(args, result: result)
+      } else if call.method == "analyze", let args = call.arguments as? [String: Any] {
+        self.movieExporter.analyze(args, result: result)
       } else if call.method == "cancel" {
         self.movieExporter.cancel()
         result(nil)
@@ -146,24 +148,45 @@ private final class YuanbaoMovieExporter {
       guard let source = asset.tracks(withMediaType: .video).first else {
         finish(error: "所选素材没有可用画面"); return
       }
-      let start = CMTime(seconds: Double(args["trim_start_ms"] as? Int ?? 0) / 1000, preferredTimescale: 600)
       let duration = CMTime(seconds: Double(args["duration_ms"] as? Int ?? 0) / 1000, preferredTimescale: 600)
-      guard asset.duration.isNumeric, CMTimeCompare(start + duration, asset.duration + CMTime(seconds: 0.1, preferredTimescale: 600)) <= 0 else {
-        finish(error: "裁剪区间超出视频长度"); return
-      }
+      let isClip = args["video_path"] as? String != nil
+      let segments = isClip ? (args["segments"] as? [[String: Any]] ?? []) :
+        [["start_ms": 0, "end_ms": args["duration_ms"] as? Int ?? 0, "speed": 1.0]]
+      guard !segments.isEmpty else { finish(error: "没有可导出的片段"); return }
       let composition = AVMutableComposition()
       guard let video = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
         finish(error: "无法创建视频轨道"); return
       }
-      try video.insertTimeRange(CMTimeRange(start: start, duration: duration), of: source, at: .zero)
+      var position = CMTime.zero
+      for segment in segments {
+        let start = CMTime(seconds: Double(segment["start_ms"] as? Int ?? 0)/1000, preferredTimescale:600)
+        let end = CMTime(seconds: Double(segment["end_ms"] as? Int ?? 0)/1000, preferredTimescale:600)
+        let speed = segment["speed"] as? Double ?? 1
+        guard [0.25, 0.5, 1.0].contains(speed), CMTimeCompare(end,start)>0,
+          asset.duration.isNumeric, CMTimeCompare(end, asset.duration + CMTime(seconds:0.1,preferredTimescale:600))<=0 else {
+          finish(error:"片段范围或速度无效"); return
+        }
+        let sourceDuration = end-start
+        let targetDuration = CMTimeMultiplyByFloat64(sourceDuration, multiplier: 1/speed)
+        try video.insertTimeRange(CMTimeRange(start:start,duration:sourceDuration),of:source,at:position)
+        video.scaleTimeRange(CMTimeRange(start:position,duration:sourceDuration),toDuration:targetDuration)
+        position = position+targetDuration
+      }
       let sourceRect = CGRect(origin: .zero, size: source.naturalSize).applying(source.preferredTransform).standardized
       guard sourceRect.width > 0, sourceRect.height > 0 else { finish(error: "视频尺寸无效"); return }
-      let scale = min(size.width / sourceRect.width, size.height / sourceRect.height)
+      let fill = args["subject_fill"] as? Bool == true
+      let zoom = CGFloat(args["zoom"] as? Double ?? 1)
+      let cropW = min(sourceRect.width,sourceRect.height*9/16)/zoom
+      let cropH = cropW*16/9
+      let x = max(0,min(sourceRect.width-cropW,CGFloat(args["focus_x"] as? Double ?? 0.5)*sourceRect.width-cropW/2))
+      let y = max(0,min(sourceRect.height-cropH,CGFloat(args["focus_y"] as? Double ?? 0.5)*sourceRect.height-cropH/2))
+      let scale = fill ? size.width/cropW : min(size.width/sourceRect.width,size.height/sourceRect.height)
+      let tx = fill ? -x*scale : (size.width-sourceRect.width*scale)/2
+      let ty = fill ? -y*scale : (size.height-sourceRect.height*scale)/2
       let transform = source.preferredTransform
-        .concatenating(CGAffineTransform(translationX: -sourceRect.minX, y: -sourceRect.minY))
-        .concatenating(CGAffineTransform(scaleX: scale, y: scale))
-        .concatenating(CGAffineTransform(translationX: (size.width - sourceRect.width * scale) / 2,
-          y: (size.height - sourceRect.height * scale) / 2))
+        .concatenating(CGAffineTransform(translationX:-sourceRect.minX,y:-sourceRect.minY))
+        .concatenating(CGAffineTransform(scaleX:scale,y:scale))
+        .concatenating(CGAffineTransform(translationX:tx,y:ty))
       let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: video)
       layer.setTransform(transform, at: .zero)
       let instruction = AVMutableVideoCompositionInstruction()
@@ -193,7 +216,16 @@ private final class YuanbaoMovieExporter {
         }
       } else if args["mute_original"] as? Bool != true, let original = asset.tracks(withMediaType: .audio).first,
         let audio = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
-        try audio.insertTimeRange(CMTimeRange(start: start, duration: duration), of: original, at: .zero)
+        var audioPosition = CMTime.zero
+        for segment in segments {
+          let begin = CMTime(seconds:Double(segment["start_ms"] as? Int ?? 0)/1000,preferredTimescale:600)
+          let end = CMTime(seconds:Double(segment["end_ms"] as? Int ?? 0)/1000,preferredTimescale:600)
+          let length = end-begin
+          let target = CMTimeMultiplyByFloat64(length,multiplier:1/(segment["speed"] as? Double ?? 1))
+          try audio.insertTimeRange(CMTimeRange(start:begin,duration:length),of:original,at:audioPosition)
+          audio.scaleTimeRange(CMTimeRange(start:audioPosition,duration:length),toDuration:target)
+          audioPosition = audioPosition+target
+        }
       }
       guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else {
         finish(error: "系统视频编码器不可用"); return
@@ -207,4 +239,48 @@ private final class YuanbaoMovieExporter {
       }
     } catch { finish(error: error.localizedDescription) }
   }
+  func analyze(_ args: [String:Any], result: @escaping FlutterResult) {
+    DispatchQueue.global(qos:.userInitiated).async {
+      do {
+        guard let path=args["video_path"] as? String else {throw NSError(domain:"video",code:1)}
+        let asset=AVURLAsset(url:URL(fileURLWithPath:path))
+        let generator=AVAssetImageGenerator(asset:asset)
+        generator.appliesPreferredTrackTransform=true
+        generator.maximumSize=CGSize(width:128,height:128)
+        generator.requestedTimeToleranceBefore=CMTime(seconds:0.05,preferredTimescale:600)
+        generator.requestedTimeToleranceAfter=CMTime(seconds:0.05,preferredTimescale:600)
+        let start=args["start_ms"] as? Int ?? 0
+        let duration=min(30000,max(1,args["duration_ms"] as? Int ?? 1))
+        let fx=args["focus_x"] as? Double ?? 0.5, fy=args["focus_y"] as? Double ?? 0.5
+        var previous:[Double]?=nil
+        var samples=[[String:Any]]()
+        for i in 0..<40 {
+          try autoreleasepool {
+            let ms=Double(start)+(Double(i)+0.5)*Double(duration)/40
+            let frame=try generator.copyCGImage(at:CMTime(seconds:ms/1000,preferredTimescale:600),actualTime:nil)
+            let w=CGFloat(frame.width)/2,h=CGFloat(frame.height)/2
+            let x=max(0,min(CGFloat(frame.width)-w,CGFloat(fx)*CGFloat(frame.width)-w/2))
+            let y=max(0,min(CGFloat(frame.height)-h,CGFloat(fy)*CGFloat(frame.height)-h/2))
+            guard let roi=frame.cropping(to:CGRect(x:x,y:y,width:w,height:h)) else {return}
+            var bytes=[UInt8](repeating:0,count:64*64*4)
+            try bytes.withUnsafeMutableBytes { buffer in
+              guard let context=CGContext(data:buffer.baseAddress,width:64,height:64,bitsPerComponent:8,bytesPerRow:256,
+                space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue) else {throw NSError(domain:"frame",code:2)}
+              context.draw(roi,in:CGRect(x:0,y:0,width:64,height:64))
+            }
+            var luma=[Double](repeating:0,count:4096),mean=0.0,motion=0.0,sharp=0.0
+            for p in 0..<4096 {
+              luma[p]=Double(bytes[p*4])*0.299+Double(bytes[p*4+1])*0.587+Double(bytes[p*4+2])*0.114
+              mean+=luma[p]; if let prev=previous {motion+=abs(luma[p]-prev[p])}
+            }
+            for y in 1...62 {for x in 1...62 {let p=y*64+x;sharp+=abs(4*luma[p]-luma[p-1]-luma[p+1]-luma[p-64]-luma[p+64])}}
+            samples.append(["time_ms":Int(ms),"motion":motion/4096,"sharpness":sharp/3844,"brightness":mean/4096])
+            previous=luma
+          }
+        }
+        DispatchQueue.main.async {result(samples)}
+      } catch {DispatchQueue.main.async{result(FlutterError(code:"ANALYZE",message:error.localizedDescription,details:nil))}}
+    }
+  }
+
 }

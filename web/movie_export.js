@@ -11,6 +11,7 @@ window.yuanbaoExportMovie = async function (r) {
   if (document.hidden) throw new Error('请保持页面在前台再导出');
   const urls = [], images = [], chunks = [];
   let video, audio, stream, recorder, music, raf, timer, rejectRender;
+  const segments = r.segments?.length ? r.segments : [{start_ms:r.trimStartMs || 0, end_ms:(r.trimStartMs || 0)+r.durationMs,speed:1}];
   const url = (b64, type) => {
     const raw = atob(b64), a = new Uint8Array(raw.length);
     for (let i = 0; i < raw.length; i++) a[i] = raw.charCodeAt(i);
@@ -39,12 +40,12 @@ window.yuanbaoExportMovie = async function (r) {
         video.onloadedmetadata = resolve;
         video.onerror = () => reject(new Error('此浏览器无法读取所选视频'));
       });
-      if (r.trimStartMs + r.durationMs > video.duration * 1000 + 100) {
+      if (segments.some(s => s.start_ms < 0 || s.end_ms > video.duration * 1000 + 100 || s.end_ms <= s.start_ms || ![.25,.5,1].includes(s.speed))) {
         throw new Error('裁剪区间超出视频时长');
       }
-      if (r.trimStartMs > 0) {
+      if (segments[0].start_ms > 0) {
         await new Promise(resolve => {
-          video.onseeked = resolve; video.currentTime = r.trimStartMs / 1000;
+          video.onseeked = resolve; video.currentTime = segments[0].start_ms / 1000;
         });
       }
     }
@@ -68,9 +69,14 @@ window.yuanbaoExportMovie = async function (r) {
     const draw = elapsed => {
       ctx.fillStyle = '#1f1b17'; ctx.fillRect(0, 0, 540, 960);
       if (video) {
-        const scale = Math.min(540 / video.videoWidth, 960 / video.videoHeight);
-        const w = video.videoWidth * scale, h = video.videoHeight * scale;
-        ctx.drawImage(video, (540 - w) / 2, (960 - h) / 2, w, h);
+        if (r.subjectFill) {
+          const crop = yuanbaoSubjectCrop(video.videoWidth,video.videoHeight,r.focusX??.5,r.focusY??.5,r.zoom??1);
+          ctx.drawImage(video,crop.x,crop.y,crop.w,crop.h,0,0,540,960);
+        } else {
+          const scale = Math.min(540/video.videoWidth,960/video.videoHeight);
+          const w=video.videoWidth*scale,h=video.videoHeight*scale;
+          ctx.drawImage(video,(540-w)/2,(960-h)/2,w,h);
+        }
       } else {
         const i = Math.max(0, Math.min(images.length - 1, Math.floor(elapsed / (r.secondsPerSlide * 1000))));
         ctx.drawImage(images[i], 0, 0, 540, 960);
@@ -87,21 +93,40 @@ window.yuanbaoExportMovie = async function (r) {
     stopped.catch(() => {});
     recorder.start(500);
     if (music) music.start();
-    if (video) await video.play();
+
     document.addEventListener('visibilitychange', visibility);
-    await new Promise((resolve, reject) => {
-      rejectRender = reject;
-      const start = performance.now();
-      timer = setTimeout(() => reject(new Error('导出超时，请缩短片段')), r.durationMs + 30000);
-      const tick = now => {
-        const elapsed = now - start;
+    if (video) {
+      for (const segment of segments) {
+        video.pause();
+        const target = segment.start_ms/1000;
+        if (Math.abs(video.currentTime-target)>.005) await yuanbaoSeek(video,target);
+        video.playbackRate=segment.speed;
+        await video.play();
+        await new Promise((resolve,reject)=>{
+          rejectRender=reject;
+          timer=setTimeout(()=>reject(new Error('片段编码超时，请保持页面前台后重试')), (segment.end_ms-segment.start_ms)/segment.speed+15000);
+          const tick=()=>{
+            try {
+              draw(0);
+              if (video.currentTime*1000>=segment.end_ms-15 || video.ended) resolve();
+              else raf=requestAnimationFrame(tick);
+            } catch(e){reject(e);}
+          };
+          raf=requestAnimationFrame(tick);
+        });
+        clearTimeout(timer); video.pause();
+      }
+    } else await new Promise((resolve,reject)=>{
+      rejectRender=reject;
+      const start=performance.now();
+      timer=setTimeout(()=>reject(new Error('导出超时，请缩短片段')),r.durationMs+30000);
+      const tick=now=>{
         try {
-          draw(elapsed);
-          if (elapsed >= r.durationMs) resolve();
-          else raf = requestAnimationFrame(tick);
-        } catch (e) { reject(e); }
+          const elapsed=now-start;draw(elapsed);
+          if(elapsed>=r.durationMs)resolve();else raf=requestAnimationFrame(tick);
+        } catch(e){reject(e);}
       };
-      raf = requestAnimationFrame(tick);
+      raf=requestAnimationFrame(tick);
     });
     recorder.stop(); await stopped;
     let blob = new Blob(chunks, { type: mime.startsWith('video/mp4') ? 'video/mp4' : 'video/webm' });
@@ -171,3 +196,43 @@ async function yuanbaoWebmDuration(blob, durationMs) {
   if(!segment.size.unknown)writeSize(segment.size,segment.size.value+11n);
   return new Blob([out],{type:'video/webm'});
 }
+
+// Shared normalized anchor: explicit user composition, not automatic tracking.
+function yuanbaoSubjectCrop(width,height,x,y,zoom) {
+  const w=Math.min(width,height*9/16)/zoom,h=w*16/9;
+  return {x:Math.max(0,Math.min(width-w,x*width-w/2)),y:Math.max(0,Math.min(height-h,y*height-h/2)),w,h};
+}
+function yuanbaoSeek(video,time) {
+  return new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>{video.onseeked=null;reject(new Error('视频定位超时'));},6000);
+    video.onseeked=()=>{clearTimeout(timer);video.onseeked=null;resolve();};video.currentTime=time;
+  });
+}
+window.yuanbaoAnalyzeMovie=async function(request) {
+  const r=typeof request==='string'?JSON.parse(request):request;
+  const bytes=Uint8Array.from(atob(r.video),c=>c.charCodeAt(0));
+  const url=URL.createObjectURL(new Blob([bytes],{type:r.videoExtension==='webm'?'video/webm':'video/mp4'}));
+  const video=document.createElement('video'); video.muted=true; video.playsInline=true;
+  let prev=null;
+  try {
+    await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=()=>reject(new Error('无法读取视频'));video.src=url;});
+    const canvas=document.createElement('canvas');canvas.width=64;canvas.height=64;
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});
+    const samples=[];
+    for(let i=0;i<40;i++) {
+      if(document.hidden)throw new Error('请保持页面前台后重试分析');
+      const time=Math.min(video.duration*1000-50,r.startMs+(i+.5)*r.durationMs/40);
+      await yuanbaoSeek(video,Math.max(0,time)/1000);
+      const w=video.videoWidth*.5,h=video.videoHeight*.5;
+      const x=Math.max(0,Math.min(video.videoWidth-w,(r.focusX??.5)*video.videoWidth-w/2));
+      const y=Math.max(0,Math.min(video.videoHeight-h,(r.focusY??.5)*video.videoHeight-h/2));
+      ctx.drawImage(video,x,y,w,h,0,0,64,64);
+      const data=ctx.getImageData(0,0,64,64).data,luma=new Float32Array(4096);
+      let mean=0,motion=0,sharp=0;
+      for(let p=0;p<4096;p++){const j=p*4;luma[p]=data[j]*.299+data[j+1]*.587+data[j+2]*.114;mean+=luma[p];if(prev)motion+=Math.abs(luma[p]-prev[p]);}
+      for(let y=1;y<63;y++)for(let x=1;x<63;x++){const p=y*64+x;sharp+=Math.abs(4*luma[p]-luma[p-1]-luma[p+1]-luma[p-64]-luma[p+64]);}
+      samples.push({time_ms:Math.round(time),motion:motion/4096,sharpness:sharp/(62*62),brightness:mean/4096});prev=luma;
+    }
+    return JSON.stringify(samples);
+  } finally {video.pause();video.removeAttribute('src');video.load();URL.revokeObjectURL(url);}
+};

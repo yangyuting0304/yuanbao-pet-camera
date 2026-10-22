@@ -14,6 +14,7 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "export" -> movieExporter!!.export(call.arguments as Map<*, *>, result)
+                    "analyze" -> movieExporter!!.analyze(call.arguments as Map<*, *>, result)
                     "cancel" -> { movieExporter?.cancel(); result.success(null) }
                     else -> result.notImplemented()
                 }

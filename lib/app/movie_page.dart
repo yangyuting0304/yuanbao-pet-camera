@@ -34,8 +34,150 @@ class _MoviePageState extends ConsumerState<MoviePage> {
   RangeValues _range = const RangeValues(0, 10);
   bool _mute = false, _busy = false, _saving = false, _saved = false;
   String _stage = '';
-  static const _templates = ['元宝日常', '奶油相册', '经典全屏'];
+  static const _templates = ['日常留白', '奶油相册', '主体全屏'];
   bool _loadedArgument = false;
+  bool _subjectFill = false, _momentSlow = false;
+  double _focusX = .5, _focusY = .5, _zoom = 1, _speed = 1;
+  int? _cueMs;
+  String _cueLabel = '';
+
+  List<MovieSegment> get _segments {
+    final start = (_range.start * 1000).round(),
+        end = (_range.end * 1000).round();
+    if (_momentSlow && _cueMs != null && _cueMs! >= start && _cueMs! <= end) {
+      return momentRecipe(
+        _cueMs!,
+        start,
+        end,
+        speed: _speed == 1 ? .5 : _speed,
+      );
+    }
+    return [MovieSegment(start, end, speed: _speed)];
+  }
+
+  bool get _hasSlow => _segments.any((s) => s.speed != 1);
+
+  Future<void> _findMoment() async {
+    if (_video == null || _busy) return;
+    setState(() {
+      _busy = true;
+      _stage = '正在本机挑选动作片段…';
+      _error = null;
+    });
+    try {
+      await _player?.pause();
+      final samples = await analyzeMovie(
+        _video!,
+        _videoExtension,
+        startMs: (_range.start * 1000).round(),
+        durationMs: ((_range.end - _range.start) * 1000).round(),
+        focusX: _focusX,
+        focusY: _focusY,
+      );
+      final best = bestActionMoment(samples);
+      if (!mounted) return;
+      if (best == null) {
+        _message('没有找到清晰的动作候选，可以播放后手动标记眨眼或转头');
+        return;
+      }
+      await _player?.seekTo(Duration(milliseconds: best.timeMs));
+      if (mounted) {
+        setState(() {
+          _cueMs = best.timeMs;
+          _cueLabel = '动作候选，请确认';
+          _momentSlow = true;
+          _speed = .5;
+          _result = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _error = '选片未完成：$e，可以手动标记');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Widget _sourcePreview() {
+    final player = _player!;
+    final size = player.value.size;
+    final crop = subjectCrop(size.width, size.height, _focusX, _focusY, _zoom);
+    return GestureDetector(
+      onTapUp: (tap) {
+        final box = tap.localPosition;
+        // In fill mode, taps select a point in the currently visible crop.
+        final render =
+            _previewKey.currentContext?.findRenderObject() as RenderBox?;
+        if (render == null) return;
+        final x = (box.dx / render.size.width).clamp(0.0, 1.0),
+            y = (box.dy / render.size.height).clamp(0.0, 1.0);
+        var targetX = crop.x + x * crop.width,
+            targetY = crop.y + y * crop.height;
+        if (!_subjectFill) {
+          final scale =
+              (render.size.width / size.width <
+                  render.size.height / size.height)
+              ? render.size.width / size.width
+              : render.size.height / size.height;
+          final left = (render.size.width - size.width * scale) / 2;
+          final top = (render.size.height - size.height * scale) / 2;
+          targetX = (box.dx - left) / (size.width * scale);
+          targetY = (box.dy - top) / (size.height * scale);
+          if (targetX < 0 || targetX > 1 || targetY < 0 || targetY > 1) return;
+        }
+        setState(() {
+          _focusX = targetX;
+          _focusY = targetY;
+          _subjectFill = true;
+          _result = null;
+        });
+      },
+      child: AspectRatio(
+        key: _previewKey,
+        aspectRatio: 9 / 16,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final scale = _subjectFill
+                ? constraints.maxWidth / (crop.width * size.width)
+                : (constraints.maxWidth / size.width <
+                          constraints.maxHeight / size.height
+                      ? constraints.maxWidth / size.width
+                      : constraints.maxHeight / size.height);
+            return ClipRect(
+              child: ColoredBox(
+                color: const Color(0xFF262421),
+                child: Stack(
+                  children: [
+                    Positioned(
+                      left: _subjectFill
+                          ? -crop.x * size.width * scale
+                          : (constraints.maxWidth - size.width * scale) / 2,
+                      top: _subjectFill
+                          ? -crop.y * size.height * scale
+                          : (constraints.maxHeight - size.height * scale) / 2,
+                      width: size.width * scale,
+                      height: size.height * scale,
+                      child: VideoPlayer(player),
+                    ),
+                    const Center(
+                      child: IgnorePointer(
+                        child: Icon(
+                          Icons.center_focus_strong,
+                          color: Colors.white70,
+                          size: 30,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  final _previewKey = GlobalKey();
 
   @override
   void didChangeDependencies() {
@@ -165,6 +307,12 @@ class _MoviePageState extends ConsumerState<MoviePage> {
     final old = _player;
     _player = null;
     _video = null;
+    _cueMs = null;
+    _momentSlow = false;
+    _speed = 1;
+    _focusX = .5;
+    _focusY = .5;
+    _zoom = 1;
     await old?.dispose();
     if (_videoUrl != null) await MediaPlatform.releaseMediaUrl(_videoUrl!);
     _videoUrl = null;
@@ -241,7 +389,7 @@ class _MoviePageState extends ConsumerState<MoviePage> {
     if (!overlayOnly) {
       canvas.drawColor(
         [
-          const Color(0xFFFFE89A),
+          const Color(0xFFECE4D8),
           const Color(0xFFFFF5E5),
           Colors.black,
         ][_template],
@@ -360,7 +508,12 @@ class _MoviePageState extends ConsumerState<MoviePage> {
               : await _renderSlide(null, overlayOnly: true),
           musicBytes: _music,
           musicExtension: _musicExtension,
-          muteOriginal: _mute || _music != null,
+          muteOriginal: _mute || _music != null || (_video != null && _hasSlow),
+          segments: _video == null ? const [] : _segments,
+          subjectFill: _subjectFill,
+          focusX: _focusX,
+          focusY: _focusY,
+          zoom: _zoom,
         ),
       );
       if (!mounted) return;
@@ -433,7 +586,7 @@ class _MoviePageState extends ConsumerState<MoviePage> {
     return PopScope(
       canPop: !_busy && !_saving,
       child: Scaffold(
-        backgroundColor: const Color(0xFFFFFBF3),
+        backgroundColor: const Color(0xFFF5F0E8),
         appBar: AppBar(
           title: const Text('一键成片'),
           actions: [
@@ -535,26 +688,175 @@ class _MoviePageState extends ConsumerState<MoviePage> {
                   ),
                 ),
               if (_video != null && _player?.value.isInitialized == true) ...[
-                AspectRatio(
-                  aspectRatio: 9 / 16,
-                  child: ColoredBox(
-                    color: Colors.black,
-                    child: Center(
-                      child: AspectRatio(
-                        aspectRatio: _player!.value.aspectRatio,
-                        child: VideoPlayer(_player!),
+                _sourcePreview(),
+                const SizedBox(height: 8),
+                const Text(
+                  '点猫咪的位置突出主体；固定构图，不是自动跟踪',
+                  style: TextStyle(fontSize: 12),
+                ),
+                ValueListenableBuilder<VideoPlayerValue>(
+                  valueListenable: _player!,
+                  builder: (context, value, _) {
+                    return Column(
+                      children: [
+                        Slider(
+                          min: 0,
+                          max: value.duration.inMilliseconds.toDouble(),
+                          value: value.position.inMilliseconds.toDouble().clamp(
+                            0.0,
+                            value.duration.inMilliseconds.toDouble(),
+                          ),
+                          onChanged: (v) async {
+                            await _player!.pause();
+                            await _player!.seekTo(
+                              Duration(milliseconds: v.round()),
+                            );
+                          },
+                        ),
+                        Text(
+                          '${(value.position.inMilliseconds / 1000).toStringAsFixed(2)} 秒',
+                        ),
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          spacing: 8,
+                          children: [
+                            IconButton(
+                              tooltip: '后退0.03秒',
+                              icon: const Icon(Icons.skip_previous),
+                              onPressed: () async {
+                                await _player!.pause();
+                                await _player!.seekTo(
+                                  Duration(
+                                    milliseconds:
+                                        (value.position.inMilliseconds - 33)
+                                            .clamp(
+                                              0,
+                                              value.duration.inMilliseconds,
+                                            ),
+                                  ),
+                                );
+                              },
+                            ),
+                            IconButton(
+                              tooltip: value.isPlaying ? '暂停' : '播放源视频',
+                              icon: Icon(
+                                value.isPlaying
+                                    ? Icons.pause
+                                    : Icons.play_arrow,
+                              ),
+                              onPressed: () async {
+                                if (value.isPlaying) {
+                                  await _player!.pause();
+                                } else {
+                                  await _player!.setPlaybackSpeed(.5);
+                                  await _player!.play();
+                                }
+                              },
+                            ),
+                            IconButton(
+                              tooltip: '前进0.03秒',
+                              icon: const Icon(Icons.skip_next),
+                              onPressed: () async {
+                                await _player!.pause();
+                                await _player!.seekTo(
+                                  Duration(
+                                    milliseconds:
+                                        (value.position.inMilliseconds + 33)
+                                            .clamp(
+                                              0,
+                                              value.duration.inMilliseconds,
+                                            ),
+                                  ),
+                                );
+                              },
+                            ),
+                            OutlinedButton(
+                              onPressed: () async {
+                                await _player!.pause();
+                                setState(() {
+                                  _cueMs = value.position.inMilliseconds;
+                                  _cueLabel = '手动精彩标记';
+                                  _momentSlow = true;
+                                  _speed = .5;
+                                  _result = null;
+                                });
+                              },
+                              child: const Text('标记这一刻'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: _findMoment,
+                  icon: const Icon(Icons.auto_awesome_outlined),
+                  label: const Text('一键挑选动作片段'),
+                ),
+                if (_cueMs != null) ...[
+                  Text('$_cueLabel · ${(_cueMs! / 1000).toStringAsFixed(2)}秒'),
+                  const Text(
+                    '眨眼、转头、伸爪可手动标记；动作候选不代表已识别眨眼。',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('精彩处局部慢放'),
+                    value: _momentSlow,
+                    onChanged: (v) => setState(() {
+                      _momentSlow = v;
+                      _result = null;
+                    }),
+                  ),
+                ],
+                ExpansionTile(
+                  title: const Text('构图与节奏'),
+                  children: [
+                    SwitchListTile(
+                      title: const Text('主体铺满竖屏'),
+                      value: _subjectFill,
+                      onChanged: (v) => setState(() {
+                        _subjectFill = v;
+                        _result = null;
+                      }),
+                    ),
+                    if (_subjectFill)
+                      Slider(
+                        min: 1,
+                        max: 2,
+                        divisions: 10,
+                        value: _zoom,
+                        label: '${_zoom.toStringAsFixed(1)}倍',
+                        onChanged: (v) => setState(() {
+                          _zoom = v;
+                          _result = null;
+                        }),
+                      ),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        for (final speed in [1.0, .5, .25])
+                          ChoiceChip(
+                            label: Text('${speed}x'),
+                            selected: _speed == speed,
+                            onSelected: (_) => setState(() {
+                              _speed = speed;
+                              _result = null;
+                            }),
+                          ),
+                      ],
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Text(
+                        '慢放自动关闭原声，可另加配乐。普通视频慢放不会增加真实细节；优先使用60/120fps素材。',
                       ),
                     ),
-                  ),
+                  ],
                 ),
-                TextButton(
-                  onPressed: () async {
-                    await _player!.seekTo(
-                      Duration(milliseconds: (_range.start * 1000).round()),
-                    );
-                    await _player!.play();
-                  },
-                  child: const Text('播放源视频'),
+                Text(
+                  '预计成片 ${(_segments.fold<int>(0, (n, s) => n + s.outputMs) / 1000).toStringAsFixed(1)} 秒',
                 ),
                 Text(
                   '截取 ${_range.start.toStringAsFixed(1)}～${_range.end.toStringAsFixed(1)} 秒（最多30秒）',
